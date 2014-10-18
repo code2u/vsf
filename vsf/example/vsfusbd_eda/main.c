@@ -10,24 +10,27 @@
 #include "framework/vsfsm/vsfsm.h"
 #include "framework/vsftimer/vsftimer.h"
 
+#include "dal/usart_stream/usart_stream.h"
+
 #include "stack/usb/device/vsfusbd.h"
 #include "stack/usb/device/class/HID/vsfusbd_HID.h"
+#include "stack/usb/device/class/CDC/vsfusbd_CDCACM.h"
 
 // USB descriptors
-static const uint8_t HID_DeviceDescriptor[] =
+static const uint8_t USB_DeviceDescriptor[] =
 {
 	0x12,	// bLength = 18
 	USB_DESC_TYPE_DEVICE,	// USB_DESC_TYPE_DEVICE
 	0x00,
 	0x02,	// bcdUSB
-	0x00,	// device class
-	0x00,	// device sub class
-	0x00,	// device protocol
+	0xEF,	// device class: IAD
+	0x02,	// device sub class
+	0x01,	// device protocol
 	0x40,	// max packet size
 	0x83,
 	0x04,	// vendor
-	0x10,
-	0x57,	// product
+	0x39,
+	0xA0,	// product
 	0x00,
 	0x02,	// bcdDevice
 	1,	// manu facturer
@@ -36,21 +39,32 @@ static const uint8_t HID_DeviceDescriptor[] =
 	0x01	// number of configuration 
 };
 
-static const uint8_t HID_ConfigDescriptor[] =
+static const uint8_t USB_ConfigDescriptor[] =
 {
 	// Configuation Descriptor
 	0x09,	// bLength: Configuation Descriptor size
 	USB_DESC_TYPE_CONFIGURATION,
 			// bDescriptorType: Configuration
-	34,		// wTotalLength:no of returned bytes*
+	108,	// wTotalLength:no of returned bytes*
 	0x00,
-	0x01,	// bNumInterfaces: 1 interface
+	0x03,	// bNumInterfaces: 1 interface
 	0x01,	// bConfigurationValue: Configuration value
 	0x00,	// iConfiguration: Index of string descriptor describing the configuration
 	0x80,	// bmAttributes: bus powered
 	0x64,	// MaxPower 200 mA
+	
+	// IAD
+	0x08,	// bLength: IAD Descriptor size
+	USB_DESC_TYPE_IAD,
+			// bDescriptorType: IAD
+	0,		// bFirstInterface
+	1,		// bInterfaceCount
+	0x03,	// bFunctionClass
+	0x01,	// bFunctionSubClass
+	0x01,	// bFunctionProtocol
+	0x04,	// iFunction
 
-	// Interface Descriptor
+	// Interface Descriptor for HID
 	0x09,	// bLength: Interface Descriptor size
 	USB_DESC_TYPE_INTERFACE,	// bDescriptorType:
 	0x00,	// bInterfaceNumber: Number of Interface
@@ -59,16 +73,16 @@ static const uint8_t HID_ConfigDescriptor[] =
 	0x03,	// bInterfaceClass
 	0x01,	// bInterfaceSubClass : 1=BOOT, 0=no boot*
 	0x01,	// nInterfaceProtocol : 0=none, 1=keyboard, 2=mouse
-	0x00,	// iInterface:
+	0x04,	// iInterface:
 	
 	// HID Descriptor
 	0x09,
 	USB_HIDDESC_TYPE_HID,	// 0x21 == HID Discriptor
 	0x00,
 	0x01,	// HID BCD ID
-	0x00,	//Country COde*
+	0x00,	// Country Code
 	0x01,	// Number of Descriptors
-	USB_HIDDESC_TYPE_REPORT,	// Descriptor Type*
+	USB_HIDDESC_TYPE_REPORT,	// Descriptor Type
 	63,
 	0x00,	// Descriptor Length
 	
@@ -79,7 +93,145 @@ static const uint8_t HID_ConfigDescriptor[] =
 	0x03,	// interrupt endpoint type
 	0x40,	// Maximum packet size (64 bytes)
 	0x00,
-	0x20	// Polling interval in milliseconds
+	0x20,	// Polling interval in milliseconds
+	
+	// IAD
+	0x08,	// bLength: IAD Descriptor size
+	USB_DESC_TYPE_IAD,
+			// bDescriptorType: IAD
+	1,		// bFirstInterface
+	2,		// bInterfaceCount
+	0x02,	// bFunctionClass
+	0x02,	// bFunctionSubClass
+	0x01,	// bFunctionProtocol
+	0x05,	// iFunction
+	
+	// Interface Descriptor for CDC
+	0x09,	// bLength: Interface Descriptor size
+	USB_DESC_TYPE_INTERFACE,
+			// bDescriptorType: Interface
+	1,		// bInterfaceNumber: Number of Interface
+	0x00,	// bAlternateSetting: Alternate setting
+	0x01,	// bNumEndpoints: One endpoints used
+	0x02,	// bInterfaceClass: Communication Interface Class
+	0x02,	// bInterfaceSubClass: Abstract Control Model
+	0x01,	// bInterfaceProtocol: Common AT commands
+	0x05,	// iInterface:
+	
+	// Header Functional Descriptor
+	0x05,	// bLength: Endpoint Descriptor size
+	0x24,	// bDescriptorType: CS_INTERFACE
+	0x00,	// bDescriptorSubtype: Header Func Desc
+	0x10,	// bcdCDC: spec release number
+	0x01,
+	
+	// Call Managment Functional Descriptor
+	0x05,	// bFunctionLength
+	0x24,	// bDescriptorType: CS_INTERFACE
+	0x01,	// bDescriptorSubtype: Call Management Func Desc
+	0x00,	// bmCapabilities: D0+D1
+	0x01,	// bDataInterface: 1
+	
+	// ACM Functional Descriptor
+	0x04,	// bFunctionLength
+	0x24,	// bDescriptorType: CS_INTERFACE
+	0x02,	// bDescriptorSubtype: Abstract Control Management desc
+	0x02,	// bmCapabilities
+	
+	// Union Functional Descriptor
+	0x05,	// bFunctionLength
+	0x24,	// bDescriptorType: CS_INTERFACE
+	0x06,	// bDescriptorSubtype: Union func desc
+	1,		// bMasterInterface: Communication class interface
+	2,		// bSlaveInterface0: Data Class Interface
+	
+	// Endpoint 2 Descriptor
+	0x07,	// bLength: Endpoint Descriptor size
+	USB_DESC_TYPE_ENDPOINT,
+			// bDescriptorType: Endpoint
+	0x82,	// bEndpointAddress: (IN2)
+	0x03,	// bmAttributes: Interrupt
+	8,		// wMaxPacketSize:
+	0x00,
+	0xFF,	// bInterval:
+	
+	// Data class interface descriptor
+	0x09,	// bLength: Endpoint Descriptor size
+	USB_DESC_TYPE_INTERFACE,
+			// bDescriptorType: Interface
+	2,		// bInterfaceNumber: Number of Interface
+	0x00,	// bAlternateSetting: Alternate setting
+	0x02,	// bNumEndpoints: Two endpoints used
+	0x0A,	// bInterfaceClass: CDC
+	0x00,	// bInterfaceSubClass:
+	0x00,	// bInterfaceProtocol:
+	0x00,	// iInterface:
+	
+	// Endpoint 3 Descriptor
+	0x07,	// bLength: Endpoint Descriptor size
+	USB_DESC_TYPE_ENDPOINT,
+			// bDescriptorType: Endpoint
+	0x03,	// bEndpointAddress: (OUT3)
+	0x02,	// bmAttributes: Bulk
+	64,		// wMaxPacketSize:
+	0x00,
+	0x00,	// bInterval: ignore for Bulk transfer
+	
+	// Endpoint 3 Descriptor
+	0x07,	// bLength: Endpoint Descriptor size
+	USB_DESC_TYPE_ENDPOINT,
+			// bDescriptorType: Endpoint
+	0x83,	// bEndpointAddress: (IN3)
+	0x02,	// bmAttributes: Bulk
+	64,		// wMaxPacketSize:
+	0x00,
+	0x00	// bInterval
+};
+
+static const uint8_t USB_StringLangID[] =
+{
+	4,
+	USB_DESC_TYPE_STRING,
+	0x09,
+	0x04
+};
+
+static const uint8_t USB_StringVendor[] =
+{
+	20,
+	USB_DESC_TYPE_STRING,
+	'S', 0, 'i', 0, 'm', 0, 'o', 0, 'n', 0, 'Q', 0, 'i', 0, 'a', 0,
+	'n', 0
+};
+
+static const uint8_t USB_StringSerial[50] =
+{
+	50,
+	USB_DESC_TYPE_STRING,
+	'0', 0, '1', 0, '2', 0, '3', 0, '4', 0, '5', 0, '6', 0, '7', 0, 
+	'8', 0, '9', 0, 'A', 0, 'B', 0, 'C', 0, 'D', 0, 'E', 0, 'F', 0, 
+	'0', 0, '0', 0, '0', 0, '0', 0, '0', 0, '0', 0, '0', 0, '0', 0, 
+};
+
+static const uint8_t USB_StringProduct[] =
+{
+	14,
+	USB_DESC_TYPE_STRING,
+	'V', 0, 'S', 0, 'F', 0, 'U', 0, 'S', 0, 'B', 0
+};
+
+static const uint8_t HID_StringFunc[] =
+{
+	14,
+	USB_DESC_TYPE_STRING,
+	'V', 0, 'S', 0, 'F', 0, 'H', 0, 'I', 0, 'D', 0
+};
+
+static const uint8_t CDC_StringFunc[] =
+{
+	14,
+	USB_DESC_TYPE_STRING,
+	'V', 0, 'S', 0, 'F', 0, 'C', 0, 'D', 0, 'C', 0
 };
 
 static const uint8_t HID_ReportDescriptor[63] = {
@@ -117,47 +269,16 @@ static const uint8_t HID_ReportDescriptor[63] = {
     0xc0 // END_COLLECTION
 };
 
-static const uint8_t HID_StringLangID[] =
-{
-	4,
-	USB_DESC_TYPE_STRING,
-	0x09,
-	0x04
-};
-
-static const uint8_t HID_StringVendor[] =
-{
-	38,
-	USB_DESC_TYPE_STRING,
-	'N', 0, 'U', 0, 'C', 0, '4', 0, '0', 0, '0', 0, '.', 0, '.', 0,
-	'.', 0, '.', 0, '.', 0, '.', 0, '.', 0, '.', 0, '.', 0, '.', 0,
-	'.', 0, '.', 0
-};
-
-static const uint8_t HID_StringSerial[50] =
-{
-	50,
-	USB_DESC_TYPE_STRING,
-	'0', 0, '1', 0, '2', 0, '3', 0, '4', 0, '5', 0, '6', 0, '7', 0, 
-	'8', 0, '9', 0, 'A', 0, 'B', 0, 'C', 0, 'D', 0, 'E', 0, 'F', 0, 
-	'0', 0, '0', 0, '0', 0, '0', 0, '0', 0, '0', 0, '0', 0, '0', 0, 
-};
-
-static const uint8_t HID_StringProduct[] =
-{
-	16,
-	USB_DESC_TYPE_STRING,
-	'M', 0, 'O', 0, 'U', 0, 'S', 0, 'E', 0, '.', 0, '.', 0
-};
-
 static const struct vsfusbd_desc_filter_t HID_descriptors[] = 
 {
-	VSFUSBD_DESC_DEVICE(0, HID_DeviceDescriptor, sizeof(HID_DeviceDescriptor), NULL),
-	VSFUSBD_DESC_CONFIG(0, 0, HID_ConfigDescriptor, sizeof(HID_ConfigDescriptor), NULL),
-	VSFUSBD_DESC_STRING(0, 0, HID_StringLangID, sizeof(HID_StringLangID), NULL),
-	VSFUSBD_DESC_STRING(0x0409, 1, HID_StringVendor, sizeof(HID_StringVendor), NULL),
-	VSFUSBD_DESC_STRING(0x0409, 2, HID_StringProduct, sizeof(HID_StringProduct), NULL),
-	VSFUSBD_DESC_STRING(0x0409, 3, HID_StringSerial, sizeof(HID_StringSerial), NULL),
+	VSFUSBD_DESC_DEVICE(0, USB_DeviceDescriptor, sizeof(USB_DeviceDescriptor), NULL),
+	VSFUSBD_DESC_CONFIG(0, 0, USB_ConfigDescriptor, sizeof(USB_ConfigDescriptor), NULL),
+	VSFUSBD_DESC_STRING(0, 0, USB_StringLangID, sizeof(USB_StringLangID), NULL),
+	VSFUSBD_DESC_STRING(0x0409, 1, USB_StringVendor, sizeof(USB_StringVendor), NULL),
+	VSFUSBD_DESC_STRING(0x0409, 2, USB_StringProduct, sizeof(USB_StringProduct), NULL),
+	VSFUSBD_DESC_STRING(0x0409, 3, USB_StringSerial, sizeof(USB_StringSerial), NULL),
+	VSFUSBD_DESC_STRING(0x0409, 4, HID_StringFunc, sizeof(HID_StringFunc), NULL),
+	VSFUSBD_DESC_STRING(0x0409, 5, CDC_StringFunc, sizeof(CDC_StringFunc), NULL),
 	VSFUSBD_DESC_NULL
 };
 
@@ -187,16 +308,26 @@ struct vsfapp_t
 		uint8_t pin;
 	} usb_pullup;
 	
-	struct usbd_hid_t
+	struct
 	{
-		struct vsfusbd_HID_param_t HID_param;
-		struct vsfusbd_HID_report_t HID_reports[1];
-		struct vsfusbd_iface_t ifaces[1];
+		struct
+		{
+			struct vsfusbd_HID_param_t param;
+			struct vsfusbd_HID_report_t reports[1];
+			// private
+			uint8_t report0_buffer[8];
+		} hid;
+		struct
+		{
+			struct vsfusbd_CDCACM_param_t param;
+			struct usart_stream_info_t stream;
+			uint8_t txbuff[64];
+			uint8_t rxbuff[64];
+		} cdc;
+		struct vsfusbd_iface_t ifaces[3];
 		struct vsfusbd_config_t config[1];
 		struct vsfusbd_device_t device;
-		// private
-		uint8_t HID_report0_buffer[8];
-	} usbd_hid;
+	} usbd;
 	
 	struct vsfsm_t sm;
 	struct vsftimer_timer_t usbpu_timer;
@@ -208,34 +339,76 @@ struct vsfapp_t
 	},							// struct usb_pullup_port_t usb_pullup;
 	{
 		{
-			1, 1,
-			(struct vsfusbd_desc_filter_t *)HID_Report_Descriptors,
-			dimof(app.usbd_hid.HID_reports),
-			(struct vsfusbd_HID_report_t *)&app.usbd_hid.HID_reports,
-		},						// struct vsfusbd_HID_param_t HID_param;
+			{
+				1, 1,
+				(struct vsfusbd_desc_filter_t *)HID_Report_Descriptors,
+				dimof(app.usbd.hid.reports),
+				(struct vsfusbd_HID_report_t *)&app.usbd.hid.reports,
+			},					// struct vsfusbd_HID_param_t param;
+			{
+				{USB_HID_REPORT_INPUT, 1, NULL,
+					{app.usbd.hid.report0_buffer,
+						sizeof(app.usbd.hid.report0_buffer)},
+					HID_on_set_get_report},
+			},					// struct vsfusbd_HID_report_t reports[1];
+		},						// struct hid;
 		{
-			{USB_HID_REPORT_INPUT, 1, NULL,
-				{app.usbd_hid.HID_report0_buffer,
-					sizeof(app.usbd_hid.HID_report0_buffer)},
-				HID_on_set_get_report},
-		},						// struct vsfusbd_HID_report_t HID_reports[1];
+			{
+				{
+					3,			// ep_out
+					3, 			// ep_in
+					&app.usbd.cdc.stream.stream_tx,
+								// struct vsf_stream_t *stream_tx;
+					&app.usbd.cdc.stream.stream_rx,
+								// struct vsf_stream_t *stream_rx;
+				},
+				{
+					NULL, NULL, NULL, NULL,
+				},
+				{
+					115200,		// bitrate
+					0,			// stopbittype
+					0,			// paritytype
+					8			// datatype
+				},
+			},					// struct vsfusbd_CDCACM_param_t param;
+			{
+				IFS_DUMMY_PORT, 0,
+				{
+					{
+						(uint8_t *)&app.usbd.cdc.rxbuff,
+						sizeof(app.usbd.cdc.rxbuff),
+					}
+				},				// struct vsf_stream_t stream_rx;
+				{
+					{
+						(uint8_t *)&app.usbd.cdc.txbuff,
+						sizeof(app.usbd.cdc.txbuff),
+					}
+				},				// struct vsf_stream_t stream_tx;
+			},					// struct usart_stream_info_t stream;
+		},						// struct cdc;
 		{
 			{(struct vsfusbd_class_protocol_t *)&vsfusbd_HID_class,
-				(void *)&app.usbd_hid.HID_param},
-		},						// struct vsfusbd_iface_t ifaces[1];
+				(void *)&app.usbd.hid.param},
+			{(struct vsfusbd_class_protocol_t *)&vsfusbd_CDCACMControl_class,
+				(void *)&app.usbd.cdc.param},
+			{(struct vsfusbd_class_protocol_t *)&vsfusbd_CDCACMData_class,
+				(void *)&app.usbd.cdc.param},
+		},						// struct vsfusbd_iface_t ifaces[3];
 		{
-			{NULL, NULL, dimof(app.usbd_hid.ifaces),
-						(struct vsfusbd_iface_t *)app.usbd_hid.ifaces},
+			{NULL, NULL, dimof(app.usbd.ifaces),
+						(struct vsfusbd_iface_t *)app.usbd.ifaces},
 		},						// struct vsfusbd_config_t config[1];
 		{
-			dimof(app.usbd_hid.config),
-			(struct vsfusbd_config_t *)app.usbd_hid.config,
+			dimof(app.usbd.config),
+			(struct vsfusbd_config_t *)app.usbd.config,
 			(struct vsfusbd_desc_filter_t *)HID_descriptors,
 			0,
 			(struct interface_usbd_t *)&core_interfaces.usbd,
 			0,
 		},						// struct vsfusbd_device_t device;
-	},							// struct usbd_hid_t usbd_hid;
+	},							// struct usbd;
 	{
 		{NULL, 0},				// struct vsfsm_evtqueue_t evtq;
 		{app_evt_handler},		// struct vsfsm_state_t init_state;
@@ -255,21 +428,22 @@ app_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 	case VSFSM_EVT_INIT:
 		if (app.usb_pullup.port != IFS_DUMMY_PORT)
 		{
-			interfaces->gpio.init(app.usb_pullup.port);
-			interfaces->gpio.clear(app.usb_pullup.port,
-									1 << app.usb_pullup.pin);
-			interfaces->gpio.config_pin(app.usb_pullup.port, app.usb_pullup.pin,
-										GPIO_OUTPP);
+			core_interfaces.gpio.init(app.usb_pullup.port);
+			core_interfaces.gpio.clear(app.usb_pullup.port,
+										1 << app.usb_pullup.pin);
+			core_interfaces.gpio.config_pin(app.usb_pullup.port,
+											app.usb_pullup.pin, GPIO_OUTPP);
 		}
-		app.usbd_hid.device.drv->disconnect();
+		app.usbd.device.drv->disconnect();
 		vsftimer_register(&app.usbpu_timer);
 		break;
 	case APP_EVT_USBPU_TO:
 		if (app.usb_pullup.port != IFS_DUMMY_PORT)
 		{
-			interfaces->gpio.set(app.usb_pullup.port, 1 << app.usb_pullup.pin);
+			core_interfaces.gpio.set(app.usb_pullup.port,
+										1 << app.usb_pullup.pin);
 		}
-		app.usbd_hid.device.drv->connect();
+		app.usbd.device.drv->connect();
 		vsftimer_unregister(&app.usbpu_timer);
 		vsfsm_remove_subsm(&vsfsm_top, sm);
 		break;
@@ -285,13 +459,14 @@ static void app_tickclk_callback_int(void *param)
 
 int main(void)
 {
-	interfaces->core.init(NULL);
-	interfaces->tickclk.init();
-	interfaces->tickclk.start();
+	core_interfaces.core.init(NULL);
+	core_interfaces.tickclk.init();
+	core_interfaces.tickclk.start();
 	vsftimer_init();
-	interfaces->tickclk.set_callback(app_tickclk_callback_int, NULL);
+	core_interfaces.tickclk.set_callback(app_tickclk_callback_int, NULL);
 	
-	vsfusbd_device_init(&app.usbd_hid.device);
+	usart_stream_init(&app.usbd.cdc.stream);
+	vsfusbd_device_init(&app.usbd.device);
 	vsfsm_init(&app.sm, true);
 	while (1)
 	{
@@ -301,7 +476,7 @@ int main(void)
 		if (!vsfsm_get_event_pending())
 		{
 			// sleep, will also enable interrupt
-			interfaces->core.sleep(SLEEP_WFI);
+			core_interfaces.core.sleep(SLEEP_WFI);
 		}
 	}
 }

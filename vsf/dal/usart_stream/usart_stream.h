@@ -56,4 +56,7 @@ uint32_t usart_stream_rx(struct usart_stream_info_t *usart_stream,
 uint32_t usart_stream_tx(struct usart_stream_info_t *usart_stream, 
 							struct vsf_buffer_t *buffer);
 
+void usart_stream_ontx_int(void *p);
+void usart_stream_onrx_int(void *p, uint16_t data);
+
 #endif	// __USART_STREAM_H_INCLUDED__

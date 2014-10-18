@@ -1911,12 +1911,15 @@
         <configuration>Release</configuration>
       </excluded>
       <group>
-        <name>mal</name>
-        <excluded>
-          <configuration>Debug</configuration>
-        </excluded>
+        <name>stream</name>
         <file>
-          <name>$PROJ_DIR$\..\..\..\..\dal\mal\mal.c</name>
+          <name>$PROJ_DIR$\..\..\..\..\dal\stream\stream.c</name>
+        </file>
+      </group>
+      <group>
+        <name>usart_stream</name>
+        <file>
+          <name>$PROJ_DIR$\..\..\..\..\dal\usart_stream\usart_stream.c</name>
         </file>
       </group>
     </group>
@@ -2066,6 +2069,15 @@
           <name>device</name>
           <group>
             <name>class</name>
+            <group>
+              <name>CDC</name>
+              <file>
+                <name>$PROJ_DIR$\..\..\..\..\stack\usb\device\class\CDC\vsfusbd_CDC.c</name>
+              </file>
+              <file>
+                <name>$PROJ_DIR$\..\..\..\..\stack\usb\device\class\CDC\vsfusbd_CDCACM.c</name>
+              </file>
+            </group>
             <group>
               <name>HID</name>
               <file>

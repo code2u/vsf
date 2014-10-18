@@ -61,7 +61,7 @@ vsftimer_init_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 	{
 	case VSFSM_EVT_TIMER:
 	{
-		uint32_t cur_tickcnt = interfaces->tickclk.get_count();
+		uint32_t cur_tickcnt = core_interfaces.tickclk.get_count();
 		struct vsftimer_timer_t timer, *ptimer = vsftimer.timerlist;
 		
 		while (ptimer != NULL)
@@ -97,7 +97,7 @@ vsf_err_t vsftimer_init(void)
 
 vsf_err_t vsftimer_register(struct vsftimer_timer_t *timer)
 {
-	timer->start_tickcnt = interfaces->tickclk.get_count();
+	timer->start_tickcnt = core_interfaces.tickclk.get_count();
 	if (NULL == vsftimer.timerlist)
 	{
 		vsftimer.timerlist = timer;

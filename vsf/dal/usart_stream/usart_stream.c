@@ -33,11 +33,13 @@ static void usart_stream_send_byte(struct usart_stream_info_t *usart_stream)
 	if (stream_rx(&usart_stream->stream_tx, &buffer) == buffer.size)
 	{
 		usart_stream->txing = true;
+#if IFS_USART_EN
 		core_interfaces.usart.tx(usart_stream->usart_index, (uint16_t)data);
+#endif
 	}
 }
 
-static void usart_stream_ontx_int(void *p)
+void usart_stream_ontx_int(void *p)
 {
 	struct usart_stream_info_t *usart_stream = (struct usart_stream_info_t *)p;
 	
@@ -57,7 +59,7 @@ static void usart_stream_ontx_int(void *p)
 	}
 }
 
-static void usart_stream_onrx_int(void *p, uint16_t data)
+void usart_stream_onrx_int(void *p, uint16_t data)
 {
 	struct usart_stream_info_t *usart_stream = (struct usart_stream_info_t *)p;
 	struct vsf_buffer_t buffer;
@@ -79,10 +81,12 @@ vsf_err_t usart_stream_init(struct usart_stream_info_t *usart_stream)
 	stream_init(&usart_stream->stream_rx);
 	if (usart_stream->usart_index != IFS_DUMMY_PORT)
 	{
+#if IFS_USART_EN
 		core_interfaces.usart.init(usart_stream->usart_index);
 		core_interfaces.usart.config_callback(usart_stream->usart_index,
 					usart_stream->int_priority, (void *)usart_stream,
 					usart_stream_ontx_int, usart_stream_onrx_int);
+#endif
 	}
 	return VSFERR_NONE;
 }
@@ -91,20 +95,25 @@ vsf_err_t usart_stream_fini(struct usart_stream_info_t *usart_stream)
 {
 	if (usart_stream->usart_index != IFS_DUMMY_PORT)
 	{
+#if IFS_USART_EN
 		core_interfaces.usart.config_callback(usart_stream->usart_index,
 					usart_stream->int_priority, NULL, NULL, NULL);
 		core_interfaces.usart.fini(usart_stream->usart_index);
+#endif
 	}
 	return VSFERR_NONE;
 }
 
 vsf_err_t usart_stream_config(struct usart_stream_info_t *usart_stream)
 {
-	if ((usart_stream->usart_index != IFS_DUMMY_PORT) &&
-		core_interfaces.usart.config(usart_stream->usart_index,
+	if ((usart_stream->usart_index != IFS_DUMMY_PORT)
+#if IFS_USART_EN
+		&& core_interfaces.usart.config(usart_stream->usart_index,
 										usart_stream->usart_info.baudrate,
 										usart_stream->usart_info.datalength,
-										usart_stream->usart_info.mode))
+										usart_stream->usart_info.mode)
+#endif
+		)
 	{
 		return VSFERR_FAIL;
 	}
