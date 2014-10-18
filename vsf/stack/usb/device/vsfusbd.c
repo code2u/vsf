@@ -76,7 +76,7 @@ vsf_err_t vsfusbd_device_get_descriptor(struct vsfusbd_device_t *device,
 vsf_err_t vsfusbd_set_IN_handler(struct vsfusbd_device_t *device,
 		uint8_t ep, vsf_err_t (*handler)(struct vsfusbd_device_t*, uint8_t))
 {
-	if (ep >= VSFUSBD_CFG_MAX_IN_EP)
+	if (ep > VSFUSBD_CFG_MAX_IN_EP)
 	{
 		return VSFERR_INVALID_PARAMETER;
 	}
@@ -88,7 +88,7 @@ vsf_err_t vsfusbd_set_IN_handler(struct vsfusbd_device_t *device,
 vsf_err_t vsfusbd_set_OUT_handler(struct vsfusbd_device_t *device,
 		uint8_t ep, vsf_err_t (*handler)(struct vsfusbd_device_t*, uint8_t))
 {
-	if (ep >= VSFUSBD_CFG_MAX_OUT_EP)
+	if (ep > VSFUSBD_CFG_MAX_OUT_EP)
 	{
 		return VSFERR_INVALID_PARAMETER;
 	}
@@ -665,7 +665,8 @@ static vsf_err_t vsfusbd_stdreq_set_configuration_process(
 		if (((config->iface[i].class_protocol != NULL) && 
 				(config->iface[i].class_protocol->init != NULL) && 
 				config->iface[i].class_protocol->init(i, device)) ||
-			vsfsm_add_subsm(&device->sm.init_state, &config->iface[i].sm))
+			((config->iface[i].sm.init_state.evt_handler != NULL) &&
+				vsfsm_add_subsm(&device->sm.init_state, &config->iface[i].sm)))
 		{
 			return VSFERR_FAIL;
 		}
@@ -1117,7 +1118,7 @@ static vsf_err_t vsfusbd_on_IN(void *p, uint8_t ep)
 {
 	struct vsfusbd_device_t *device = (struct vsfusbd_device_t *)p;
 	struct vsfsm_t *sm = &device->sm;
-	if ((ep < VSFUSBD_CFG_MAX_OUT_EP) && (device->OUT_handler[ep] != NULL))
+	if ((ep <= VSFUSBD_CFG_MAX_IN_EP) && (device->OUT_handler[ep] != NULL))
 	{
 		return vsfsm_post_evt_pending(sm, VSFUSBD_INTEVT_INEP(ep));
 	}
@@ -1128,7 +1129,7 @@ static vsf_err_t vsfusbd_on_OUT(void *p, uint8_t ep)
 {
 	struct vsfusbd_device_t *device = (struct vsfusbd_device_t *)p;
 	struct vsfsm_t *sm = &device->sm;
-	if ((ep < VSFUSBD_CFG_MAX_OUT_EP) && (device->OUT_handler[ep] != NULL))
+	if ((ep <= VSFUSBD_CFG_MAX_OUT_EP) && (device->OUT_handler[ep] != NULL))
 	{
 		return vsfsm_post_evt_pending(sm, VSFUSBD_INTEVT_OUTEP(ep));
 	}
