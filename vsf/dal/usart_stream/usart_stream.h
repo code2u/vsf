@@ -35,13 +35,6 @@ struct usart_stream_info_t
 	uint32_t int_priority;
 	struct vsf_stream_t stream_tx;
 	struct vsf_stream_t stream_rx;
-	struct
-	{
-		void *param;
-		void (*ontx_empty_int)(void *param);
-		void (*ontx_int)(void *param);
-		void (*onrx_int)(void *param);
-	} callback;
 	struct usart_info_t usart_info;
 	
 	// private

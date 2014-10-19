@@ -1916,12 +1916,6 @@
           <name>$PROJ_DIR$\..\..\..\..\dal\stream\stream.c</name>
         </file>
       </group>
-      <group>
-        <name>usart_stream</name>
-        <file>
-          <name>$PROJ_DIR$\..\..\..\..\dal\usart_stream\usart_stream.c</name>
-        </file>
-      </group>
     </group>
     <group>
       <name>framework</name>

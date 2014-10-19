@@ -849,14 +849,24 @@ uint16_t stm32_usbd_ep_get_OUT_count(uint8_t idx)
 
 static void stm32_pma2usr_copy(uint8_t *usr, uint16_t pma_addr, uint16_t bytes)
 {
-	uint16_t i;
+	uint16_t data;
 	uint32_t *pma_ptr;
 	
 	pma_ptr = (uint32_t *)(pma_addr * 2 + PMAAddr);
-	for (i = ((bytes + 1) >> 1); i > 0; i--)
+	while (bytes > 0)
 	{
-		*(uint16_t*)usr = *pma_ptr++;
-		usr += 2;
+		data = *pma_ptr++;
+		if (bytes > 1)
+		{
+			*(uint16_t*)usr = data;
+			usr += 2;
+			bytes -= 2;
+		}
+		else
+		{
+			*usr = data;
+			bytes -= 1;
+		}
 	}
 }
 

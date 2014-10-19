@@ -37,19 +37,28 @@ vsf_err_t stream_fini(struct vsf_stream_t *stream)
 
 uint32_t stream_rx(struct vsf_stream_t *stream, struct vsf_buffer_t *buffer)
 {
-	return vsf_fifo_pop(&stream->fifo, buffer->size, buffer->buffer);
+	uint32_t count = vsf_fifo_pop(&stream->fifo, buffer->size, buffer->buffer);
+	
+	if ((stream->callback_tx.on_out_int != NULL) && (count > 0))
+	{
+		stream->callback_tx.on_out_int(stream->callback_tx.param);
+	}
+	return count;
 }
 
 uint32_t stream_tx(struct vsf_stream_t *stream, struct vsf_buffer_t *buffer)
 {
-	uint32_t tx_size;
+	uint32_t count = vsf_fifo_push(&stream->fifo, buffer->size, buffer->buffer);
 	
-	tx_size = vsf_fifo_push(&stream->fifo, buffer->size, buffer->buffer);
-	if (tx_size < buffer->size)
+	if (count < buffer->size)
 	{
 		stream->overflow = true;
 	}
-	return tx_size;
+	if ((stream->callback_rx.on_in_int != NULL) && (count > 0))
+	{
+		stream->callback_rx.on_in_int(stream->callback_rx.param);
+	}
+	return count;
 }
 
 uint32_t stream_get_data_size(struct vsf_stream_t *stream)

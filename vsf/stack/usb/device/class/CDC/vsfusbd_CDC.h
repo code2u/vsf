@@ -21,7 +21,9 @@ struct vsfusbd_CDC_param_t
 	uint8_t ep_out;
 	uint8_t ep_in;
 	
+	// stream_tx is used for data stream send to USB host
 	struct vsf_stream_t *stream_tx;
+	// stream_rx is used for data stream receive from USB host
 	struct vsf_stream_t *stream_rx;
 	
 	struct
@@ -34,7 +36,11 @@ struct vsfusbd_CDC_param_t
 	struct vsf_buffer_t encapsulated_response_buffer;
 	
 	// no need to initialize below by user
-	volatile bool out_enable;
+	bool out_enable;
+	bool in_enable;
+	
+	struct vsfusbd_device_t *device;
+	struct vsfusbd_iface_t *iface;
 };
 
 // helper functions

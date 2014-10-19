@@ -25,6 +25,20 @@
 struct vsf_stream_t
 {
 	struct vsf_fifo_t fifo;
+	// callback_tx is notification for tx end of the stream
+	// when rx end read the data out, will notify the tx end
+	struct
+	{
+		void *param;
+		void (*on_out_int)(void *param);
+	} callback_tx;
+	// callback_rx is notification for rx end of the stream
+	// when tx end write the data in, will notify the rx end
+	struct
+	{
+		void *param;
+		void (*on_in_int)(void *param);
+	} callback_rx;
 	bool overflow;
 };
 

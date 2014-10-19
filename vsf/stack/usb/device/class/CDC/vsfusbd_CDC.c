@@ -6,6 +6,12 @@
 
 #include "vsfusbd_CDC.h"
 
+enum vsfusbd_CDC_EVT_t
+{
+	VSFUSBD_CDC_EVT_STREAMTX_ONIN = VSFSM_EVT_USER_LOCAL_INSTANT + 0,
+	VSFUSBD_CDC_EVT_STREAMRX_ONOUT = VSFSM_EVT_USER_LOCAL_INSTANT + 1,
+};
+
 static vsf_err_t vsfusbd_CDCData_OUT_hanlder(struct vsfusbd_device_t *device,
 												uint8_t ep)
 {
@@ -14,7 +20,7 @@ static vsf_err_t vsfusbd_CDCData_OUT_hanlder(struct vsfusbd_device_t *device,
 	struct vsfusbd_CDC_param_t *param = NULL;
 	uint16_t pkg_size, ep_size;
 	uint8_t buffer[64];
-	struct vsf_buffer_t tx_buffer;
+	struct vsf_buffer_t rx_buffer;
 	
 	if (iface < 0)
 	{
@@ -33,19 +39,21 @@ static vsf_err_t vsfusbd_CDCData_OUT_hanlder(struct vsfusbd_device_t *device,
 		return VSFERR_FAIL;
 	}
 	device->drv->ep.read_OUT_buffer(ep, buffer, pkg_size);
-	if (param->out_enable)
+	
+	rx_buffer.buffer = buffer;
+	rx_buffer.size = pkg_size;
+	stream_tx(param->stream_rx, &rx_buffer);
+	
+	if (stream_get_free_size(param->stream_rx) < ep_size)
+	{
+		param->out_enable = false;
+	}
+	else
 	{
 		device->drv->ep.enable_OUT(ep);
 	}
 	
-	if (stream_get_free_size(param->stream_tx) < ep_size)
-	{
-		param->out_enable = false;
-	}
-	tx_buffer.buffer = buffer;
-	tx_buffer.size = pkg_size;
-	return (stream_tx(param->stream_tx, &tx_buffer) == tx_buffer.size) ?
-				VSFERR_NONE : VSFERR_FAIL;
+	return VSFERR_NONE;
 }
 
 static vsf_err_t vsfusbd_CDCData_IN_hanlder(struct vsfusbd_device_t *device,
@@ -56,8 +64,8 @@ static vsf_err_t vsfusbd_CDCData_IN_hanlder(struct vsfusbd_device_t *device,
 	struct vsfusbd_CDC_param_t *param = NULL;
 	uint16_t pkg_size;
 	uint8_t buffer[64];
-	uint32_t rx_data_length;
-	struct vsf_buffer_t rx_buffer;
+	uint32_t tx_data_length;
+	struct vsf_buffer_t tx_buffer;
 	
 	if (iface < 0)
 	{
@@ -70,68 +78,107 @@ static vsf_err_t vsfusbd_CDCData_IN_hanlder(struct vsfusbd_device_t *device,
 	}
 	
 	pkg_size = device->drv->ep.get_IN_epsize(ep);
-	rx_buffer.buffer = buffer;
-	rx_buffer.size = pkg_size;
-	rx_data_length = stream_rx(param->stream_rx, &rx_buffer);
-	if (rx_data_length)
+	tx_buffer.buffer = buffer;
+	tx_buffer.size = pkg_size;
+	tx_data_length = stream_rx(param->stream_tx, &tx_buffer);
+	if (tx_data_length)
 	{
-		pkg_size = (rx_data_length > pkg_size) ? pkg_size : rx_data_length;
-		device->drv->ep.write_IN_buffer(ep, buffer, pkg_size);
-		device->drv->ep.set_IN_count(ep, pkg_size);
+		device->drv->ep.write_IN_buffer(ep, buffer, tx_data_length);
+		device->drv->ep.set_IN_count(ep, tx_data_length);
 	}
 	else
 	{
-		device->drv->ep.set_IN_count(ep, 0);
+		param->in_enable = false;
 	}
 	
 	return VSFERR_NONE;
+}
+
+static void vsfusbd_CDCData_streamtx_callback_on_in_int(void *p)
+{
+	struct vsfusbd_CDC_param_t *param = (struct vsfusbd_CDC_param_t *)p;
+	
+	vsfsm_post_evt(&param->iface->sm, VSFUSBD_CDC_EVT_STREAMTX_ONIN);
+}
+
+static void vsfusbd_CDCData_streamrx_callback_on_out_int(void *p)
+{
+	struct vsfusbd_CDC_param_t *param = (struct vsfusbd_CDC_param_t *)p;
+	
+	vsfsm_post_evt(&param->iface->sm, VSFUSBD_CDC_EVT_STREAMRX_ONOUT);
+}
+
+static struct vsfsm_state_t *
+vsfusbd_HID_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
+{
+	struct vsfusbd_CDC_param_t *param =
+						(struct vsfusbd_CDC_param_t *)sm->user_data;
+	struct vsfusbd_device_t *device = param->device;
+	
+	switch (evt)
+	{
+	case VSFSM_EVT_INIT:
+		param->stream_tx->callback_rx.param = param;
+		param->stream_tx->callback_rx.on_in_int =
+							vsfusbd_CDCData_streamtx_callback_on_in_int;
+		param->stream_rx->callback_tx.param = param;
+		param->stream_rx->callback_tx.on_out_int =
+							vsfusbd_CDCData_streamrx_callback_on_out_int;
+		
+		vsfusbd_set_IN_handler(device, param->ep_in,
+										vsfusbd_CDCData_IN_hanlder);
+		vsfusbd_set_OUT_handler(device, param->ep_out,
+										vsfusbd_CDCData_OUT_hanlder);
+		param->out_enable = false;
+		param->in_enable = false;
+		vsfsm_post_evt(sm, VSFUSBD_CDC_EVT_STREAMRX_ONOUT);
+		if (stream_get_data_size(param->stream_tx) > 0)
+		{
+			vsfsm_post_evt(sm, VSFUSBD_CDC_EVT_STREAMTX_ONIN);
+		}
+		break;
+	case VSFUSBD_CDC_EVT_STREAMTX_ONIN:
+		if (!param->in_enable)
+		{
+			param->in_enable = true;
+			vsfusbd_CDCData_IN_hanlder(param->device, param->ep_in);
+		}
+		break;
+	case VSFUSBD_CDC_EVT_STREAMRX_ONOUT:
+		if (!param->out_enable &&
+			(stream_get_free_size(param->stream_rx) >=
+					device->drv->ep.get_OUT_epsize(param->ep_out)))
+		{
+			param->out_enable = true;
+			device->drv->ep.enable_OUT(param->ep_out);
+		}
+		break;
+	}
+	
+	return NULL;
 }
 
 static vsf_err_t vsfusbd_CDCData_class_init(uint8_t iface, 
 											struct vsfusbd_device_t *device)
 {
 	struct vsfusbd_config_t *config = &device->config[device->configuration];
+	struct vsfusbd_iface_t *ifs = &config->iface[iface];
 	struct vsfusbd_CDC_param_t *param = 
-		(struct vsfusbd_CDC_param_t *)config->iface[iface].protocol_param;
+						(struct vsfusbd_CDC_param_t *)ifs->protocol_param;
 	
-	if ((NULL == param) || 
-		(NULL == param->stream_tx) || (NULL == param->stream_rx) || 
-		vsfusbd_set_IN_handler(device, param->ep_in,
-												vsfusbd_CDCData_IN_hanlder) ||
-		device->drv->ep.set_IN_count(param->ep_in, 0) || 
-		vsfusbd_set_OUT_handler(device, param->ep_out,
-												vsfusbd_CDCData_OUT_hanlder))
+	if ((NULL == param) || (NULL == param->stream_tx) ||
+		(NULL == param->stream_rx))
 	{
-		return VSFERR_FAIL;
-	}
-	param->out_enable = false;
-	
-	return VSFERR_NONE;
-}
-
-static vsf_err_t vsfusbd_CDCData_class_poll(uint8_t iface, 
-											struct vsfusbd_device_t *device)
-{
-	struct vsfusbd_config_t *config = &device->config[device->configuration];
-	struct vsfusbd_CDC_param_t *param = 
-		(struct vsfusbd_CDC_param_t *)config->iface[iface].protocol_param;
-	
-	if (NULL == param)
-	{
-		return VSFERR_FAIL;
+		return VSFERR_INVALID_PARAMETER;
 	}
 	
-	if (!param->out_enable)
-	{
-		uint16_t ep_size = device->drv->ep.get_OUT_epsize(param->ep_out);
-		
-		if (stream_get_free_size(param->stream_tx) >= ep_size)
-		{
-			param->out_enable = true;
-			device->drv->ep.enable_OUT(param->ep_out);
-		}
-	}
-	return VSFERR_NONE;
+	// state machine init
+	memset(&ifs->sm, 0, sizeof(ifs->sm));
+	ifs->sm.init_state.evt_handler = vsfusbd_HID_evt_handler;
+	param->iface = ifs;
+	param->device = device;
+	ifs->sm.user_data = (void*)param;
+	return vsfsm_init(&ifs->sm, false);
 }
 
 static vsf_err_t vsfusbd_CDCControl_SendEncapsulatedCommand_prepare(
@@ -141,7 +188,7 @@ static vsf_err_t vsfusbd_CDCControl_SendEncapsulatedCommand_prepare(
 	struct usb_ctrl_request_t *request = &device->ctrl_handler.request;
 	uint8_t iface = request->index;
 	struct vsfusbd_config_t *config = &device->config[device->configuration];
-	struct vsfusbd_CDC_param_t *param = 
+	struct vsfusbd_CDC_param_t *param =
 		(struct vsfusbd_CDC_param_t *)config->iface[iface].protocol_param;
 	
 	if (request->length > param->encapsulated_command_buffer.size)
@@ -160,7 +207,7 @@ static vsf_err_t vsfusbd_CDCControl_SendEncapsulatedCommand_process(
 	struct usb_ctrl_request_t *request = &device->ctrl_handler.request;
 	uint8_t iface = request->index;
 	struct vsfusbd_config_t *config = &device->config[device->configuration];
-	struct vsfusbd_CDC_param_t *param = 
+	struct vsfusbd_CDC_param_t *param =
 		(struct vsfusbd_CDC_param_t *)config->iface[iface].protocol_param;
 	
 	if ((param->callback.send_encapsulated_command != NULL) &&
@@ -178,7 +225,7 @@ static vsf_err_t vsfusbd_CDCControl_GetEncapsulatedResponse_prepare(
 	struct usb_ctrl_request_t *request = &device->ctrl_handler.request;
 	uint8_t iface = request->index;
 	struct vsfusbd_config_t *config = &device->config[device->configuration];
-	struct vsfusbd_CDC_param_t *param = 
+	struct vsfusbd_CDC_param_t *param =
 		(struct vsfusbd_CDC_param_t *)config->iface[iface].protocol_param;
 	
 	if (request->length > param->encapsulated_response_buffer.size)

@@ -43,19 +43,13 @@ void usart_stream_ontx_int(void *p)
 {
 	struct usart_stream_info_t *usart_stream = (struct usart_stream_info_t *)p;
 	
-	if (usart_stream->callback.ontx_int != NULL)
-	{
-		usart_stream->callback.ontx_int(usart_stream->callback.param);
-	}
-	
 	if (stream_get_data_size(&usart_stream->stream_tx))
 	{
 		usart_stream_send_byte(usart_stream);
 	}
-	else if (usart_stream->callback.ontx_empty_int != NULL)
+	else
 	{
 		usart_stream->txing = false;
-		usart_stream->callback.ontx_empty_int(usart_stream->callback.param);
 	}
 }
 
@@ -68,10 +62,6 @@ void usart_stream_onrx_int(void *p, uint16_t data)
 	buffer.buffer = &byte;
 	buffer.size = 1;
 	stream_tx(&usart_stream->stream_rx, &buffer);
-	if (usart_stream->callback.onrx_int != NULL)
-	{
-		usart_stream->callback.onrx_int(usart_stream->callback.param);
-	}
 }
 
 vsf_err_t usart_stream_init(struct usart_stream_info_t *usart_stream)

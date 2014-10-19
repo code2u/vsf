@@ -10,7 +10,7 @@
 #include "framework/vsfsm/vsfsm.h"
 #include "framework/vsftimer/vsftimer.h"
 
-#include "dal/usart_stream/usart_stream.h"
+#include "dal/stream/stream.h"
 
 #include "stack/usb/device/vsfusbd.h"
 #include "stack/usb/device/class/HID/vsfusbd_HID.h"
@@ -320,9 +320,10 @@ struct vsfapp_t
 		struct
 		{
 			struct vsfusbd_CDCACM_param_t param;
-			struct usart_stream_info_t stream;
-			uint8_t txbuff[64];
-			uint8_t rxbuff[64];
+			struct vsf_stream_t stream_tx;
+			struct vsf_stream_t stream_rx;
+			uint8_t txbuff[65];
+			uint8_t rxbuff[65];
 		} cdc;
 		struct vsfusbd_iface_t ifaces[3];
 		struct vsfusbd_config_t config[1];
@@ -357,9 +358,9 @@ struct vsfapp_t
 				{
 					3,			// ep_out
 					3, 			// ep_in
-					&app.usbd.cdc.stream.stream_tx,
+					&app.usbd.cdc.stream_tx,
 								// struct vsf_stream_t *stream_tx;
-					&app.usbd.cdc.stream.stream_rx,
+					&app.usbd.cdc.stream_rx,
 								// struct vsf_stream_t *stream_rx;
 				},
 				{
@@ -373,20 +374,17 @@ struct vsfapp_t
 				},
 			},					// struct vsfusbd_CDCACM_param_t param;
 			{
-				IFS_DUMMY_PORT, 0,
 				{
-					{
-						(uint8_t *)&app.usbd.cdc.rxbuff,
-						sizeof(app.usbd.cdc.rxbuff),
-					}
-				},				// struct vsf_stream_t stream_rx;
+					(uint8_t *)&app.usbd.cdc.txbuff,
+					sizeof(app.usbd.cdc.txbuff),
+				},			// struct vsf_fifo_t fifo;
+			},				// struct vsf_stream_t stream_tx;
+			{
 				{
-					{
-						(uint8_t *)&app.usbd.cdc.txbuff,
-						sizeof(app.usbd.cdc.txbuff),
-					}
-				},				// struct vsf_stream_t stream_tx;
-			},					// struct usart_stream_info_t stream;
+					(uint8_t *)&app.usbd.cdc.rxbuff,
+					sizeof(app.usbd.cdc.rxbuff),
+				},			// struct vsf_fifo_t fifo;
+			},				// struct vsf_stream_t stream_rx;
 		},						// struct cdc;
 		{
 			{(struct vsfusbd_class_protocol_t *)&vsfusbd_HID_class,
@@ -420,12 +418,44 @@ struct vsfapp_t
 	},							// struct vsftimer_timer_t usbpu_timer;
 };
 
+static void app_cdc_rx_callback_onin_int(void *param)
+{
+	struct vsfapp_t *app = (struct vsfapp_t *)param;
+	uint8_t buff[64];
+	struct vsf_buffer_t buffer;
+	
+	buffer.buffer = buff;
+	buffer.size = sizeof(buff);
+	buffer.size = stream_rx(&app->usbd.cdc.stream_rx, &buffer);
+	stream_tx(&app->usbd.cdc.stream_tx, &buffer);
+}
+
+// tickclk interrupt, simply call vsftimer_callback_int
+static void app_tickclk_callback_int(void *param)
+{
+	vsftimer_callback_int();
+}
+
 static struct vsfsm_state_t *
 app_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 {
 	switch (evt)
 	{
 	case VSFSM_EVT_INIT:
+		core_interfaces.core.init(NULL);
+		core_interfaces.tickclk.init();
+		core_interfaces.tickclk.start();
+		vsftimer_init();
+		core_interfaces.tickclk.set_callback(app_tickclk_callback_int, NULL);
+		
+		app.usbd.cdc.stream_rx.callback_rx.param = &app;
+		app.usbd.cdc.stream_rx.callback_rx.on_in_int =
+										app_cdc_rx_callback_onin_int;
+		
+		stream_init(&app.usbd.cdc.stream_rx);
+		stream_init(&app.usbd.cdc.stream_tx);
+		vsfusbd_device_init(&app.usbd.device);
+		
 		if (app.usb_pullup.port != IFS_DUMMY_PORT)
 		{
 			core_interfaces.gpio.init(app.usb_pullup.port);
@@ -451,22 +481,8 @@ app_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 	return NULL;
 }
 
-// tickclk interrupt, simply call vsftimer_callback_int
-static void app_tickclk_callback_int(void *param)
-{
-	vsftimer_callback_int();
-}
-
 int main(void)
 {
-	core_interfaces.core.init(NULL);
-	core_interfaces.tickclk.init();
-	core_interfaces.tickclk.start();
-	vsftimer_init();
-	core_interfaces.tickclk.set_callback(app_tickclk_callback_int, NULL);
-	
-	usart_stream_init(&app.usbd.cdc.stream);
-	vsfusbd_device_init(&app.usbd.device);
 	vsfsm_init(&app.sm, true);
 	while (1)
 	{
