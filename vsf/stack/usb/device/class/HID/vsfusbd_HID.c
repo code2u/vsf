@@ -252,7 +252,6 @@ static vsf_err_t vsfusbd_HID_class_init(uint8_t iface,
 						(struct vsfusbd_HID_param_t *)ifs->protocol_param;
 	
 	// state machine init
-	memset(&ifs->sm, 0, sizeof(ifs->sm));
 	ifs->sm.init_state.evt_handler = vsfusbd_HID_evt_handler;
 	param->iface = ifs;
 	param->device = device;

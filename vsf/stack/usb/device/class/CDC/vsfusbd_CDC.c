@@ -173,7 +173,6 @@ static vsf_err_t vsfusbd_CDCData_class_init(uint8_t iface,
 	}
 	
 	// state machine init
-	memset(&ifs->sm, 0, sizeof(ifs->sm));
 	ifs->sm.init_state.evt_handler = vsfusbd_HID_evt_handler;
 	param->iface = ifs;
 	param->device = device;

@@ -324,6 +324,7 @@ struct vsfapp_t
 			struct vsf_stream_t stream_rx;
 			uint8_t txbuff[65];
 			uint8_t rxbuff[65];
+			vsfsm_evt_t evt_buff[2];
 		} cdc;
 		struct vsfusbd_iface_t ifaces[3];
 		struct vsfusbd_config_t config[1];
@@ -392,7 +393,8 @@ struct vsfapp_t
 			{(struct vsfusbd_class_protocol_t *)&vsfusbd_CDCACMControl_class,
 				(void *)&app.usbd.cdc.param},
 			{(struct vsfusbd_class_protocol_t *)&vsfusbd_CDCACMData_class,
-				(void *)&app.usbd.cdc.param},
+				(void *)&app.usbd.cdc.param,
+				{{app.usbd.cdc.evt_buff, dimof(app.usbd.cdc.evt_buff)}}},
 		},						// struct vsfusbd_iface_t ifaces[3];
 		{
 			{NULL, NULL, dimof(app.usbd.ifaces),

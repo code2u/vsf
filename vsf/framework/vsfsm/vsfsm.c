@@ -312,8 +312,9 @@ static vsf_err_t vsfsm_poll_sm(struct vsfsm_t *sm)
 	if (sm->evtq.count)
 	{
 		evt = vsfsm_evtq_get(&sm->evtq);
-		return vsfsm_dispatch_evt(sm, evt);
+		vsfsm_dispatch_evt(sm, evt);
 	}
+	
 	// poll subsm in cur_state
 	// save sm_next incase sm_temp remove itself from the list
 	sm_temp = sm->cur_state->subsm;
