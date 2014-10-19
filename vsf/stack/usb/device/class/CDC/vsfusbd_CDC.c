@@ -98,14 +98,14 @@ static void vsfusbd_CDCData_streamtx_callback_on_in_int(void *p)
 {
 	struct vsfusbd_CDC_param_t *param = (struct vsfusbd_CDC_param_t *)p;
 	
-	vsfsm_post_evt(&param->iface->sm, VSFUSBD_CDC_EVT_STREAMTX_ONIN);
+	vsfsm_post_evt_pending(&param->iface->sm, VSFUSBD_CDC_EVT_STREAMTX_ONIN);
 }
 
 static void vsfusbd_CDCData_streamrx_callback_on_out_int(void *p)
 {
 	struct vsfusbd_CDC_param_t *param = (struct vsfusbd_CDC_param_t *)p;
 	
-	vsfsm_post_evt(&param->iface->sm, VSFUSBD_CDC_EVT_STREAMRX_ONOUT);
+	vsfsm_post_evt_pending(&param->iface->sm, VSFUSBD_CDC_EVT_STREAMRX_ONOUT);
 }
 
 static struct vsfsm_state_t *
