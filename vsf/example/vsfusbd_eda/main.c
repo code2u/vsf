@@ -16,6 +16,8 @@
 #include "stack/usb/device/class/HID/vsfusbd_HID.h"
 #include "stack/usb/device/class/CDC/vsfusbd_CDCACM.h"
 
+#include "vsfshell/vsfshell.h"
+
 // USB descriptors
 static const uint8_t USB_DeviceDescriptor[] =
 {
@@ -331,6 +333,12 @@ struct vsfapp_t
 		struct vsfusbd_device_t device;
 	} usbd;
 	
+	struct
+	{
+		struct vsfshell_t shell;
+		vsfsm_evt_t evt_buff[2];
+	} shell;
+	
 	struct vsfsm_t sm;
 	struct vsftimer_timer_t usbpu_timer;
 } static app =
@@ -410,6 +418,20 @@ struct vsfapp_t
 		},						// struct vsfusbd_device_t device;
 	},							// struct usbd;
 	{
+		{
+			&app.usbd.cdc.stream_tx,
+								// struct vsf_stream_t *stream_tx;
+			&app.usbd.cdc.stream_rx,
+								// struct vsf_stream_t *stream_rx;
+			{
+				{
+					app.shell.evt_buff,
+					dimof(app.shell.evt_buff),
+				},				// struct vsfsm_evtqueue_t evtq;
+			},					// struct vsfsm_t sm;
+		},						// struct vsfshell_t shell;
+	},							// struct shell
+	{
 		{NULL, 0},				// struct vsfsm_evtqueue_t evtq;
 		{app_evt_handler},		// struct vsfsm_state_t init_state;
 	},							// struct vsfsm_t sm;
@@ -419,18 +441,6 @@ struct vsfapp_t
 		APP_EVT_USBPU_TO,		// vsfsm_evt_t evt;
 	},							// struct vsftimer_timer_t usbpu_timer;
 };
-
-static void app_cdc_rx_callback_onin_int(void *param)
-{
-	struct vsfapp_t *app = (struct vsfapp_t *)param;
-	uint8_t buff[64];
-	struct vsf_buffer_t buffer;
-	
-	buffer.buffer = buff;
-	buffer.size = sizeof(buff);
-	buffer.size = stream_rx(&app->usbd.cdc.stream_rx, &buffer);
-	stream_tx(&app->usbd.cdc.stream_tx, &buffer);
-}
 
 // tickclk interrupt, simply call vsftimer_callback_int
 static void app_tickclk_callback_int(void *param)
@@ -450,13 +460,10 @@ app_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		vsftimer_init();
 		core_interfaces.tickclk.set_callback(app_tickclk_callback_int, NULL);
 		
-		app.usbd.cdc.stream_rx.callback_rx.param = &app;
-		app.usbd.cdc.stream_rx.callback_rx.on_in_int =
-										app_cdc_rx_callback_onin_int;
-		
 		stream_init(&app.usbd.cdc.stream_rx);
 		stream_init(&app.usbd.cdc.stream_tx);
 		vsfusbd_device_init(&app.usbd.device);
+		vsfshell_init(&app.shell.shell);
 		
 		if (app.usb_pullup.port != IFS_DUMMY_PORT)
 		{

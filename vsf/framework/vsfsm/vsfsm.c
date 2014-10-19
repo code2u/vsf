@@ -368,7 +368,12 @@ vsf_err_t vsfsm_post_evt(struct vsfsm_t *sm, vsfsm_evt_t evt)
 // pending event will be forced to be sent to event queue
 vsf_err_t vsfsm_post_evt_pending(struct vsfsm_t *sm, vsfsm_evt_t evt)
 {
-	return (sm->active) ? vsfsm_evtq_post(&sm->evtq, evt) : VSFERR_FAIL;
+	return (!sm->active) ||
+			((evt >= VSFSM_EVT_INSTANT) &&
+				(evt <= VSFSM_EVT_INSTANT_END)) ||
+			((evt >= VSFSM_EVT_LOCAL_INSTANT) &&
+				(evt <= VSFSM_EVT_LOCAL_INSTANT_END)) ?
+				VSFERR_FAIL : vsfsm_evtq_post(&sm->evtq, evt);
 }
 
 #if VSFSM_CFG_PT_EN

@@ -2156,6 +2156,12 @@
       <name>$PROJ_DIR$\..\..\vsf_cfg\vsf_usbd_cfg.h</name>
     </file>
   </group>
+  <group>
+    <name>vsfshell</name>
+    <file>
+      <name>$PROJ_DIR$\..\..\vsfshell\vsfshell.c</name>
+    </file>
+  </group>
   <file>
     <name>$PROJ_DIR$\..\..\main.c</name>
   </file>
