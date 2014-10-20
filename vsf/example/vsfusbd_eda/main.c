@@ -503,5 +503,9 @@ int main(void)
 			// sleep, will also enable interrupt
 			core_interfaces.core.sleep(SLEEP_WFI);
 		}
+		else
+		{
+			vsf_leave_critical();
+		}
 	}
 }
