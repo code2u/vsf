@@ -326,7 +326,7 @@ struct vsfapp_t
 			struct vsf_stream_t stream_rx;
 			uint8_t txbuff[65];
 			uint8_t rxbuff[65];
-			vsfsm_evt_t evt_buff[2];
+			vsfsm_evt_t evt_buff[8];
 		} cdc;
 		struct vsfusbd_iface_t ifaces[3];
 		struct vsfusbd_config_t config[1];
@@ -336,7 +336,7 @@ struct vsfapp_t
 	struct
 	{
 		struct vsfshell_t shell;
-		vsfsm_evt_t evt_buff[2];
+		vsfsm_evt_t evt_buff[8];
 	} shell;
 	
 	struct vsfsm_t sm;
