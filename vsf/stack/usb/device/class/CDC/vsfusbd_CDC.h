@@ -46,5 +46,6 @@ struct vsfusbd_CDC_param_t
 // helper functions
 struct vsfusbd_setup_filter_t *vsfusbd_get_request_filter_do(
 		struct vsfusbd_device_t *device, struct vsfusbd_setup_filter_t *list);
+void vsfusbd_CDCData_connect(struct vsfusbd_CDC_param_t *param);
 
 #endif	// __VSFUSBD_CDC_H_INCLUDED__

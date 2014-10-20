@@ -10,6 +10,8 @@ enum vsfusbd_CDC_EVT_t
 {
 	VSFUSBD_CDC_EVT_STREAMTX_ONIN = VSFSM_EVT_USER_LOCAL + 0,
 	VSFUSBD_CDC_EVT_STREAMRX_ONOUT = VSFSM_EVT_USER_LOCAL + 1,
+	VSFUSBD_CDC_EVT_STREAMTX_ONCONN = VSFSM_EVT_USER_LOCAL + 2,
+	VSFUSBD_CDC_EVT_STREAMRX_ONCONN = VSFSM_EVT_USER_LOCAL + 3,
 };
 
 static vsf_err_t vsfusbd_CDCData_OUT_hanlder(struct vsfusbd_device_t *device,
@@ -108,6 +110,20 @@ static void vsfusbd_CDCData_streamrx_callback_on_out_int(void *p)
 	vsfsm_post_evt_pending(&param->iface->sm, VSFUSBD_CDC_EVT_STREAMRX_ONOUT);
 }
 
+static void vsfusbd_CDCData_streamtx_callback_on_txconn(void *p)
+{
+	struct vsfusbd_CDC_param_t *param = (struct vsfusbd_CDC_param_t *)p;
+	
+	vsfsm_post_evt_pending(&param->iface->sm, VSFUSBD_CDC_EVT_STREAMTX_ONCONN);
+}
+
+static void vsfusbd_CDCData_streamrx_callback_on_rxconn(void *p)
+{
+	struct vsfusbd_CDC_param_t *param = (struct vsfusbd_CDC_param_t *)p;
+	
+	vsfsm_post_evt_pending(&param->iface->sm, VSFUSBD_CDC_EVT_STREAMRX_ONCONN);
+}
+
 static struct vsfsm_state_t *
 vsfusbd_HID_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 {
@@ -121,21 +137,34 @@ vsfusbd_HID_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		param->stream_tx->callback_rx.param = param;
 		param->stream_tx->callback_rx.on_in_int =
 							vsfusbd_CDCData_streamtx_callback_on_in_int;
+		param->stream_tx->callback_rx.on_connect_tx =
+							vsfusbd_CDCData_streamtx_callback_on_txconn;
 		param->stream_rx->callback_tx.param = param;
 		param->stream_rx->callback_tx.on_out_int =
 							vsfusbd_CDCData_streamrx_callback_on_out_int;
+		param->stream_rx->callback_tx.on_connect_rx =
+							vsfusbd_CDCData_streamrx_callback_on_rxconn;
 		
-		vsfusbd_set_IN_handler(device, param->ep_in,
-										vsfusbd_CDCData_IN_hanlder);
-		vsfusbd_set_OUT_handler(device, param->ep_out,
-										vsfusbd_CDCData_OUT_hanlder);
 		param->out_enable = false;
 		param->in_enable = false;
-		vsfsm_post_evt(sm, VSFUSBD_CDC_EVT_STREAMRX_ONOUT);
-		if (stream_get_data_size(param->stream_tx) > 0)
+		
+		if (param->stream_rx->rx_ready)
 		{
-			vsfsm_post_evt(sm, VSFUSBD_CDC_EVT_STREAMTX_ONIN);
+			vsfsm_post_evt(sm, VSFUSBD_CDC_EVT_STREAMRX_ONCONN);
 		}
+		if (param->stream_tx->tx_ready)
+		{
+			vsfsm_post_evt(sm, VSFUSBD_CDC_EVT_STREAMTX_ONCONN);
+		}
+		break;
+	case VSFUSBD_CDC_EVT_STREAMTX_ONCONN:
+		vsfusbd_set_IN_handler(device, param->ep_in,
+										vsfusbd_CDCData_IN_hanlder);
+		break;
+	case VSFUSBD_CDC_EVT_STREAMRX_ONCONN:
+		vsfusbd_set_OUT_handler(device, param->ep_out,
+										vsfusbd_CDCData_OUT_hanlder);
+		vsfsm_post_evt(sm, VSFUSBD_CDC_EVT_STREAMRX_ONOUT);
 		break;
 	case VSFUSBD_CDC_EVT_STREAMTX_ONIN:
 		if (!param->in_enable)
@@ -271,6 +300,12 @@ static const struct vsfusbd_setup_filter_t vsfusbd_CDCControl_class_setup[] =
 	},
 	VSFUSBD_SETUP_NULL
 };
+
+void vsfusbd_CDCData_connect(struct vsfusbd_CDC_param_t *param)
+{
+	stream_connect_tx(param->stream_rx);
+	stream_connect_rx(param->stream_tx);
+}
 
 const struct vsfusbd_class_protocol_t vsfusbd_CDCControl_class = 
 {

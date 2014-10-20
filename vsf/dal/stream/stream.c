@@ -25,6 +25,8 @@
 vsf_err_t stream_init(struct vsf_stream_t *stream)
 {
 	stream->overflow = false;
+	stream->tx_ready = false;
+	stream->rx_ready = false;
 	vsf_fifo_init(&stream->fifo);
 	return VSFERR_NONE;
 }
@@ -69,4 +71,22 @@ uint32_t stream_get_data_size(struct vsf_stream_t *stream)
 uint32_t stream_get_free_size(struct vsf_stream_t *stream)
 {
 	return vsf_fifo_get_avail_length(&stream->fifo);
+}
+
+void stream_connect_rx(struct vsf_stream_t *stream)
+{
+	if (!stream->rx_ready && (stream->callback_tx.on_connect_rx != NULL))
+	{
+		stream->callback_tx.on_connect_rx(stream->callback_tx.param);
+	}
+	stream->rx_ready = true;
+}
+
+void stream_connect_tx(struct vsf_stream_t *stream)
+{
+	if (!stream->tx_ready && (stream->callback_rx.on_connect_tx != NULL))
+	{
+		stream->callback_rx.on_connect_tx(stream->callback_rx.param);
+	}
+	stream->tx_ready = true;
 }

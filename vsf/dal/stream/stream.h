@@ -31,6 +31,7 @@ struct vsf_stream_t
 	{
 		void *param;
 		void (*on_out_int)(void *param);
+		void (*on_connect_rx)(void *param);
 	} callback_tx;
 	// callback_rx is notification for rx end of the stream
 	// when tx end write the data in, will notify the rx end
@@ -38,7 +39,10 @@ struct vsf_stream_t
 	{
 		void *param;
 		void (*on_in_int)(void *param);
+		void (*on_connect_tx)(void *param);
 	} callback_rx;
+	bool tx_ready;
+	bool rx_ready;
 	bool overflow;
 };
 
@@ -48,5 +52,7 @@ uint32_t stream_rx(struct vsf_stream_t *stream, struct vsf_buffer_t *buffer);
 uint32_t stream_tx(struct vsf_stream_t *stream, struct vsf_buffer_t *buffer);
 uint32_t stream_get_data_size(struct vsf_stream_t *stream);
 uint32_t stream_get_free_size(struct vsf_stream_t *stream);
+void stream_connect_rx(struct vsf_stream_t *stream);
+void stream_connect_tx(struct vsf_stream_t *stream);
 
 #endif	// __STREAM_H_INCLUDED__

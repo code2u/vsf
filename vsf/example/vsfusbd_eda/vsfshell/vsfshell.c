@@ -22,6 +22,7 @@
 #include "compiler.h"
 #include "app_type.h"
 
+#include "framework/vsftimer/vsftimer.h"
 #include "vsfshell.h"
 
 #include <stdlib.h>
@@ -30,10 +31,14 @@
 #define STRDUP			strdup
 
 // handlers
-static vsf_err_t vsfshell_echo_hanlder(struct vsfsm_pt_t *pt, vsfsm_evt_t evt);
+static vsf_err_t
+vsfshell_echo_handler(struct vsfsm_pt_t *pt, vsfsm_evt_t evt);
+static vsf_err_t
+vsfshell_delayms_handler(struct vsfsm_pt_t *pt, vsfsm_evt_t evt);
 static struct vsfshell_handler_t vsfshell_handlers[] =
 {
-	VSFSHELL_HANDLER("echo", vsfshell_echo_hanlder),
+	VSFSHELL_HANDLER("echo", vsfshell_echo_handler),
+	VSFSHELL_HANDLER("delayms", vsfshell_delayms_handler),
 	VSFSHELL_HANDLER_NONE
 };
 
@@ -41,6 +46,8 @@ enum vsfshell_EVT_t
 {
 	VSFSHELL_EVT_STREAMRX_ONIN = VSFSM_EVT_USER_LOCAL + 0,
 	VSFSHELL_EVT_STREAMTX_ONOUT = VSFSM_EVT_USER_LOCAL + 1,
+	VSFSHELL_EVT_STREAMRX_ONCONN = VSFSM_EVT_USER_LOCAL + 2,
+	VSFSHELL_EVT_STREAMTX_ONCONN = VSFSM_EVT_USER_LOCAL + 3,
 };
 
 static void vsfshell_streamrx_callback_on_in_int(void *p)
@@ -55,6 +62,20 @@ static void vsfshell_streamtx_callback_on_out_int(void *p)
 	struct vsfshell_t *shell = (struct vsfshell_t *)p;
 	
 	vsfsm_post_evt_pending(&shell->sm, VSFSHELL_EVT_STREAMTX_ONOUT);
+}
+
+static void vsfshell_streamrx_callback_on_txconn(void *p)
+{
+	struct vsfshell_t *shell = (struct vsfshell_t *)p;
+	
+	vsfsm_post_evt_pending(&shell->sm, VSFSHELL_EVT_STREAMRX_ONCONN);
+}
+
+static void vsfshell_streamtx_callback_on_rxconn(void *p)
+{
+	struct vsfshell_t *shell = (struct vsfshell_t *)p;
+	
+	vsfsm_post_evt_pending(&shell->sm, VSFSHELL_EVT_STREAMTX_ONCONN);
 }
 
 static void vsfshell_print_string(struct vsfshell_t *shell, char *str)
@@ -277,12 +298,31 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		shell->stream_rx->callback_rx.param = shell;
 		shell->stream_rx->callback_rx.on_in_int =
 							vsfshell_streamrx_callback_on_in_int;
+		shell->stream_rx->callback_rx.on_connect_tx =
+							vsfshell_streamrx_callback_on_txconn;
 		shell->stream_tx->callback_tx.param = shell;
 		shell->stream_tx->callback_tx.on_out_int =
 							vsfshell_streamtx_callback_on_out_int;
+		shell->stream_tx->callback_tx.on_connect_rx =
+							vsfshell_streamtx_callback_on_rxconn;
 		
 		vsfshell_register_handlers(shell, vsfshell_handlers);
 		
+		stream_connect_rx(shell->stream_rx);
+		stream_connect_tx(shell->stream_tx);
+		if (shell->stream_rx->tx_ready)
+		{
+			vsfsm_post_evt(sm, VSFSHELL_EVT_STREAMRX_ONCONN);
+		}
+		if (shell->stream_tx->rx_ready)
+		{
+			vsfsm_post_evt(sm, VSFSHELL_EVT_STREAMTX_ONCONN);
+		}
+		break;
+	case VSFSHELL_EVT_STREAMRX_ONCONN:
+		break;
+	case VSFSHELL_EVT_STREAMTX_ONCONN:
+		vsfshell_print_string(shell, "vsfshell 0.1 beta" VSFSHELL_LINEEND);
 		vsfshell_print_string(shell, VSFSHELL_PROMPT);
 		break;
 	case VSFSHELL_EVT_STREAMRX_ONIN:
@@ -333,15 +373,20 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 				
 				if ('\r' == ch)
 				{
-					char *cmd = (char *)shell->tbuffer.buffer.buffer;
-					// create new handler thread
-					cmd[shell->tbuffer.position] = '\0';
-					if (vsfshell_new_handler_thread(shell, cmd))
+					if (shell->tbuffer.position > 0)
 					{
-						vsfshell_print_string(shell, "Fail to execute :");
-						vsfshell_print_string(shell, cmd);
-						vsfshell_print_string(shell, VSFSHELL_LINEEND);
-						
+						char *cmd = (char *)shell->tbuffer.buffer.buffer;
+						// create new handler thread
+						cmd[shell->tbuffer.position] = '\0';
+						if (vsfshell_new_handler_thread(shell, cmd))
+						{
+							vsfshell_print_string(shell, "Fail to execute :");
+							vsfshell_print_string(shell, cmd);
+							vsfshell_print_string(shell, VSFSHELL_LINEEND);
+						}
+					}
+					if (NULL == shell->frontend_handler)
+					{
 						vsfshell_print_string(shell, VSFSHELL_PROMPT);
 					}
 					shell->tbuffer.position = 0;
@@ -379,7 +424,7 @@ void vsfshell_register_handlers(struct vsfshell_t *shell,
 
 // handlers
 static vsf_err_t
-vsfshell_echo_hanlder(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
+vsfshell_echo_handler(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 {
 	struct vsfshell_handler_param_t *param =
 						(struct vsfshell_handler_param_t *)pt->user_data;
@@ -400,6 +445,46 @@ vsfshell_echo_hanlder(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 	vsfsm_pt_end(pt);
 	
 handler_thread_end:
+	vsfshell_handler_exit(pt);
+	return VSFERR_NONE;
+}
+
+static vsf_err_t
+vsfshell_delayms_handler(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
+{
+	struct vsfshell_handler_param_t *param =
+						(struct vsfshell_handler_param_t *)pt->user_data;
+	struct vsfshell_t *shell = param->shell;
+	
+	vsfsm_pt_begin(pt);
+	if (param->argc != 2)
+	{
+		vsfshell_print_string(shell, "invalid format." VSFSHELL_LINEEND);
+		vsfshell_print_string(shell, "format: delayms MS" VSFSHELL_LINEEND);
+		goto handler_thread_end;
+	}
+	
+	param->priv = MALLOC(sizeof(struct vsftimer_timer_t));
+	if (NULL == param->priv)
+	{
+		vsfshell_print_string(shell, "not enough resources." VSFSHELL_LINEEND);
+		goto handler_thread_end;
+	}
+	memset(param->priv, 0, sizeof(struct vsftimer_timer_t));
+	((struct vsftimer_timer_t *)param->priv)->sm = pt->sm;
+	((struct vsftimer_timer_t *)param->priv)->evt = VSFSM_EVT_USER_LOCAL_INSTANT;
+	((struct vsftimer_timer_t *)param->priv)->interval = strtoul(param->argv[1], NULL, 0);
+	vsftimer_register((struct vsftimer_timer_t *)param->priv);
+	vsfsm_pt_wfe(pt, VSFSM_EVT_USER_LOCAL_INSTANT);
+	vsftimer_unregister((struct vsftimer_timer_t *)param->priv);
+	
+	vsfsm_pt_end(pt);
+	
+handler_thread_end:
+	if (param->priv != NULL)
+	{
+		FREE(param->priv);
+	}
 	vsfshell_handler_exit(pt);
 	return VSFERR_NONE;
 }

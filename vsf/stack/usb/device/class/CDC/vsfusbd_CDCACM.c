@@ -92,6 +92,7 @@ static vsf_err_t vsfusbd_CDCACMControl_SetLineCoding_process(
 	{
 		return VSFERR_FAIL;
 	}
+	vsfusbd_CDCData_connect(&param->CDC_param);
 	return VSFERR_NONE;
 }
 
