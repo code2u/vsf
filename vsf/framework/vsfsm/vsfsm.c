@@ -385,6 +385,8 @@ struct vsfsm_state_t * vsfsm_pt_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 	
 	switch (evt)
 	{
+	case VSFSM_EVT_ENTER:
+		break;
 	case VSFSM_EVT_INIT:
 		pt->state = 0;
 		// fall through
