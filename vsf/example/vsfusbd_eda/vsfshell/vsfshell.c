@@ -69,7 +69,8 @@ static void vsfshell_print_string(struct vsfshell_t *shell, char *str)
 static vsf_err_t
 vsfshell_parse_cmd(char *cmd, struct vsfshell_handler_param_t *param)
 {
-	uint8_t cmd_len, i, argv_num;
+	uint8_t cmd_len, argv_num;
+	uint16_t i;
 	char *argv_tmp;
 	
 	memset(param->argv, 0, sizeof(param->argv));
@@ -149,13 +150,15 @@ vsfshell_search_handler(struct vsfshell_t *shell, char *name)
 	return handler;
 }
 
-static struct vsfshell_handler_param_t *
-vsfshell_new_handler_thread(struct vsfshell_t *shell)
+static vsf_err_t
+vsfshell_new_handler_thread(struct vsfshell_t *shell, char *cmd)
 {
 	struct vsfshell_handler_param_t *param =
 		(struct vsfshell_handler_param_t *)malloc(sizeof(*param));
 	struct vsfshell_handler_t *handler;
 	uint32_t i;
+	bool frontend = false;
+	vsf_err_t err = VSFERR_NONE;
 	
 	if (NULL == param)
 	{
@@ -165,11 +168,23 @@ vsfshell_new_handler_thread(struct vsfshell_t *shell)
 	param->shell = shell;
 	
 	// parse command line
-	shell->tbuffer.buffer.buffer[shell->tbuffer.position] = '\0';
 	param->argc = dimof(param->argv);
-	if (vsfshell_parse_cmd((char *)shell->tbuffer.buffer.buffer, param))
+	if (vsfshell_parse_cmd(cmd, param))
 	{
 		goto exit_free_argv;
+	}
+	
+	if ((param->argc > 1) && !strcmp(param->argv[param->argc - 1], "&"))
+	{
+		// background thread
+		param->argc--;
+		FREE(param->argv[param->argc - 1]);
+		param->argv[param->argc - 1] = NULL;
+	}
+	else
+	{
+		// frontend thread
+		frontend = true;
 	}
 	
 	// search handler
@@ -182,11 +197,15 @@ vsfshell_new_handler_thread(struct vsfshell_t *shell)
 	param->pt.thread = handler->thread;
 	param->pt.user_data = param;
 	
-	if (vsfsm_pt_init(&param->sm, &param->pt, false) ||
-		vsfsm_add_subsm(&shell->sm.init_state, &param->sm))
+	if (vsfsm_add_subsm(&shell->sm.init_state, &param->sm))
 	{
 		goto exit_free_argv;
 	}
+	if (frontend)
+	{
+		shell->frontend_handler = &param->sm;
+	}
+	vsfsm_pt_init(&param->sm, &param->pt, false);
 	goto exit;
 	
 exit_free_argv:
@@ -199,8 +218,9 @@ exit_free_argv:
 	}
 	FREE(param);
 	param = NULL;
+	err = VSFERR_FAIL;
 exit:
-	return param;
+	return err;
 }
 
 static void
@@ -224,6 +244,22 @@ vsfshell_free_handler_thread(struct vsfshell_t *shell, struct vsfsm_t *sm)
 		}
 		FREE(sm);
 	}
+}
+
+void vsfshell_handler_exit(struct vsfsm_pt_t *pt)
+{
+	struct vsfshell_handler_param_t *param =
+						(struct vsfshell_handler_param_t *)pt->user_data;
+	struct vsfshell_t *shell = param->shell;
+	
+	if (shell->frontend_handler == &param->sm)
+	{
+		// current frontend_handler exit
+		shell->frontend_handler = NULL;
+		vsfshell_print_string(shell, VSFSHELL_LINEEND VSFSHELL_PROMPT);
+	}
+	vsfsm_remove_subsm(&shell->sm.init_state, &param->sm);
+	vsfshell_free_handler_thread(shell, &param->sm);
 }
 
 static struct vsfsm_state_t *
@@ -297,27 +333,17 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 				
 				if ('\r' == ch)
 				{
+					char *cmd = (char *)shell->tbuffer.buffer.buffer;
 					// create new handler thread
-					struct vsfshell_handler_param_t *param =
-											vsfshell_new_handler_thread(shell);
-					
-					if (param != NULL)
+					cmd[shell->tbuffer.position] = '\0';
+					if (vsfshell_new_handler_thread(shell, cmd))
 					{
-						if ((param->argc > 1) &&
-							!strcmp(param->argv[param->argc - 1], "&"))
-						{
-							// background thread
-							param->argc--;
-							FREE(param->argv[param->argc - 1]);
-							param->argv[param->argc - 1] = NULL;
-						}
-						else
-						{
-							// frontend thread
-							shell->frontend_handler = &param->sm;
-						}
+						vsfshell_print_string(shell, "Fail to execute :");
+						vsfshell_print_string(shell, cmd);
+						vsfshell_print_string(shell, VSFSHELL_LINEEND);
+						
+						vsfshell_print_string(shell, VSFSHELL_PROMPT);
 					}
-					
 					shell->tbuffer.position = 0;
 					break;
 				}
@@ -365,7 +391,7 @@ vsfshell_echo_hanlder(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 	{
 		vsfshell_print_string(shell, "invalid format." VSFSHELL_LINEEND);
 		vsfshell_print_string(shell, "format: echo STRING" VSFSHELL_LINEEND);
-		return VSFERR_NONE;
+		goto handler_thread_end;
 	}
 	
 	buffer.buffer = (uint8_t *)param->argv[1];
@@ -373,5 +399,7 @@ vsfshell_echo_hanlder(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 	stream_tx(shell->stream_tx, &buffer);
 	vsfsm_pt_end(pt);
 	
+handler_thread_end:
+	vsfshell_handler_exit(pt);
 	return VSFERR_NONE;
 }

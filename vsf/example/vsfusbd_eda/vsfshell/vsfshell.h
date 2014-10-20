@@ -65,4 +65,7 @@ vsf_err_t vsfshell_init(struct vsfshell_t *shell);
 void vsfshell_register_handlers(struct vsfshell_t *shell,
 										struct vsfshell_handler_t *handlers);
 
+// for handler
+void vsfshell_handler_exit(struct vsfsm_pt_t *pt);
+
 #endif	// __VSFSHELL_H_INCLUDED__

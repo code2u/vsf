@@ -394,8 +394,10 @@ struct vsfsm_state_t * vsfsm_pt_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		{
 		#if VSFSM_CFG_PT_STACK_EN
 			uint32_t stack = interfaces->core.get_stack();
+			bool pt_stack_enable = false;
 			if (pt->stack != NULL)
 			{
+				pt_stack_enable = true;
 				interfaces->core.set_stack((uint32_t)pt->stack);
 			}
 		#endif
@@ -403,7 +405,7 @@ struct vsfsm_state_t * vsfsm_pt_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 			pt->thread(pt, evt);
 			
 		#if VSFSM_CFG_PT_STACK_EN
-			if (pt->stack != NULL)
+			if (pt_stack_enable)
 			{
 				interfaces->core.set_stack(stack);
 			}
