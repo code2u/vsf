@@ -315,6 +315,7 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 	struct vsfshell_t *shell = (struct vsfshell_t *)pt->user_data;
 	struct vsf_buffer_t buffer;
 	uint8_t ch;
+	char echo_str[2];
 	
 	switch (evt)
 	{
@@ -360,7 +361,9 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 			}
 			
 			// echo
-			stream_tx(shell->stream_tx, &buffer);
+			echo_str[0] = ch;
+			echo_str[1] = '\0';
+			vsfshell_print_string(shell, echo_str);
 			
 			if ('\r' == ch)
 			{
