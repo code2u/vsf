@@ -48,6 +48,7 @@ enum vsfshell_EVT_t
 	VSFSHELL_EVT_STREAMTX_ONOUT = VSFSM_EVT_USER_LOCAL + 1,
 	VSFSHELL_EVT_STREAMRX_ONCONN = VSFSM_EVT_USER_LOCAL + 2,
 	VSFSHELL_EVT_STREAMTX_ONCONN = VSFSM_EVT_USER_LOCAL + 3,
+	VSFSHELL_EVT_FRONT_HANDLER_EXIT = VSFSM_EVT_USER_LOCAL_INSTANT + 0,
 };
 
 static void vsfshell_streamrx_callback_on_in_int(void *p)
@@ -78,13 +79,38 @@ static void vsfshell_streamtx_callback_on_rxconn(void *p)
 	vsfsm_post_evt_pending(&shell->sm, VSFSHELL_EVT_STREAMTX_ONCONN);
 }
 
-static void vsfshell_print_string(struct vsfshell_t *shell, char *str)
+// vsfshell_output_thread is used to process the events
+// 		from the receiver of the stream_tx
+vsf_err_t vsfshell_output_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 {
+	char *str = (char *)pt->user_data;
+	struct vsfshell_t *shell = container_of(pt, struct vsfshell_t, output_pt);
+	uint32_t str_len = strlen(str), size_avail;
 	struct vsf_buffer_t buffer;
 	
-	buffer.buffer = (uint8_t *)str;
-	buffer.size = strlen(str);
-	stream_tx(shell->stream_tx, &buffer);
+	vsfsm_pt_begin(pt);
+	while (str_len > 0)
+	{
+		size_avail = stream_get_free_size(shell->stream_tx);
+		if (!size_avail)
+		{
+			vsfsm_pt_wfe(pt, VSFSHELL_EVT_STREAMTX_ONOUT);
+			size_avail = stream_get_free_size(shell->stream_tx);
+		}
+		
+		if (size_avail)
+		{
+			buffer.buffer = (uint8_t *)str;
+			buffer.size = min(str_len, size_avail);
+			buffer.size = stream_tx(shell->stream_tx, &buffer);
+			str = &str[buffer.size];
+			str_len = strlen(str);
+			pt->user_data = (void *)str;
+		}
+	}
+	vsfsm_pt_end(pt);
+	
+	return VSFERR_NONE;
 }
 
 static vsf_err_t
@@ -224,7 +250,7 @@ vsfshell_new_handler_thread(struct vsfshell_t *shell, char *cmd)
 	}
 	if (frontend)
 	{
-		shell->frontend_handler = &param->sm;
+		shell->frontend_pt = &param->pt;
 	}
 	vsfsm_pt_init(&param->sm, &param->pt, false);
 	goto exit;
@@ -273,14 +299,91 @@ void vsfshell_handler_exit(struct vsfsm_pt_t *pt)
 						(struct vsfshell_handler_param_t *)pt->user_data;
 	struct vsfshell_t *shell = param->shell;
 	
-	if (shell->frontend_handler == &param->sm)
+	if (shell->frontend_pt == &param->pt)
 	{
 		// current frontend_handler exit
-		shell->frontend_handler = NULL;
-		vsfshell_print_string(shell, VSFSHELL_LINEEND VSFSHELL_PROMPT);
+		vsfsm_post_evt(&shell->sm, VSFSHELL_EVT_FRONT_HANDLER_EXIT);
 	}
 	vsfsm_remove_subsm(&shell->sm.init_state, &param->sm);
 	vsfshell_free_handler_thread(shell, &param->sm);
+}
+
+// vsfshell_input_thread is used to process the events
+// 		from the sender of the stream_rx
+vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
+{
+	struct vsfshell_t *shell = (struct vsfshell_t *)pt->user_data;
+	struct vsf_buffer_t buffer;
+	uint8_t ch;
+	
+	switch (evt)
+	{
+	case VSFSHELL_EVT_STREAMTX_ONCONN:
+		vsfshell_print_string(shell, "vsfshell 0.1 beta by SimonQian" VSFSHELL_LINEEND);
+		// fall through
+	case VSFSHELL_EVT_FRONT_HANDLER_EXIT:
+		vsfshell_print_string(shell, VSFSHELL_LINEEND VSFSHELL_PROMPT);
+		shell->frontend_pt = pt;
+		break;
+	case VSFSHELL_EVT_STREAMRX_ONIN:
+		do
+		{
+			buffer.buffer = &ch;
+			buffer.size = 1;
+			buffer.size = stream_rx(shell->stream_rx, &buffer);
+			if (0 == buffer.size)
+			{
+				break;
+			}
+			
+			if ('\r' == ch)
+			{
+				vsfshell_print_string(shell, "\n");
+			}
+			else if ('\b' == ch)
+			{
+				if (shell->tbuffer.position)
+				{
+					shell->tbuffer.position--;
+					vsfshell_print_string(shell, "\b \b");
+				}
+				continue;
+			}
+			else if (!((ch >= ' ') && (ch <= '~')) ||
+				(shell->tbuffer.position >= shell->tbuffer.buffer.size - 1))
+			{
+				continue;
+			}
+			else
+			{
+				shell->tbuffer.buffer.buffer[shell->tbuffer.position++] = ch;
+			}
+			
+			// echo
+			stream_tx(shell->stream_tx, &buffer);
+			
+			if ('\r' == ch)
+			{
+				if (shell->tbuffer.position > 0)
+				{
+					char *cmd = (char *)shell->tbuffer.buffer.buffer;
+					// create new handler thread
+					cmd[shell->tbuffer.position] = '\0';
+					if (vsfshell_new_handler_thread(shell, cmd))
+					{
+						vsfshell_print_string(shell, "Fail to execute :");
+						vsfshell_print_string(shell, cmd);
+						vsfshell_print_string(shell, VSFSHELL_LINEEND);
+						vsfsm_post_evt(&shell->sm, VSFSHELL_EVT_FRONT_HANDLER_EXIT);
+					}
+				}
+				shell->tbuffer.position = 0;
+				break;
+			}
+		} while (buffer.size > 0);
+		break;
+	}
+	return VSFERR_NOT_READY;
 }
 
 static struct vsfsm_state_t *
@@ -307,6 +410,9 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 							vsfshell_streamtx_callback_on_rxconn;
 		
 		vsfshell_register_handlers(shell, vsfshell_handlers);
+		shell->input_pt.user_data = shell;
+		shell->input_pt.thread = vsfshell_input_thread;
+		shell->output_pt.thread = vsfshell_output_thread;
 		
 		stream_connect_rx(shell->stream_rx);
 		stream_connect_tx(shell->stream_tx);
@@ -321,81 +427,18 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		break;
 	case VSFSHELL_EVT_STREAMRX_ONCONN:
 		break;
+	case VSFSHELL_EVT_FRONT_HANDLER_EXIT:
 	case VSFSHELL_EVT_STREAMTX_ONCONN:
-		vsfshell_print_string(shell, "vsfshell 0.1 beta" VSFSHELL_LINEEND);
-		vsfshell_print_string(shell, VSFSHELL_PROMPT);
+		// pass to shell->input_pt
+		shell->input_pt.thread(&shell->input_pt, evt);
 		break;
 	case VSFSHELL_EVT_STREAMRX_ONIN:
-		if (shell->frontend_handler != NULL)
-		{
-			// send input to front_handler
-		}
-		else
-		{
-			struct vsf_buffer_t buffer;
-			uint8_t ch;
-			
-			do
-			{
-				buffer.buffer = &ch;
-				buffer.size = 1;
-				buffer.size = stream_rx(shell->stream_rx, &buffer);
-				if (0 == buffer.size)
-				{
-					break;
-				}
-				
-				if ('\r' == ch)
-				{
-					vsfshell_print_string(shell, "\n");
-				}
-				else if ('\b' == ch)
-				{
-					if (shell->tbuffer.position)
-					{
-						shell->tbuffer.position--;
-						vsfshell_print_string(shell, "\b \b");
-					}
-					continue;
-				}
-				else if (!((ch >= ' ') && (ch <= '~')) ||
-					(shell->tbuffer.position >= shell->tbuffer.buffer.size - 1))
-				{
-					continue;
-				}
-				else
-				{
-					shell->tbuffer.buffer.buffer[shell->tbuffer.position++] = ch;
-				}
-				
-				// echo
-				stream_tx(shell->stream_tx, &buffer);
-				
-				if ('\r' == ch)
-				{
-					if (shell->tbuffer.position > 0)
-					{
-						char *cmd = (char *)shell->tbuffer.buffer.buffer;
-						// create new handler thread
-						cmd[shell->tbuffer.position] = '\0';
-						if (vsfshell_new_handler_thread(shell, cmd))
-						{
-							vsfshell_print_string(shell, "Fail to execute :");
-							vsfshell_print_string(shell, cmd);
-							vsfshell_print_string(shell, VSFSHELL_LINEEND);
-						}
-					}
-					if (NULL == shell->frontend_handler)
-					{
-						vsfshell_print_string(shell, VSFSHELL_PROMPT);
-					}
-					shell->tbuffer.position = 0;
-					break;
-				}
-			} while (buffer.size > 0);
-		}
-		break;
 	case VSFSHELL_EVT_STREAMTX_ONOUT:
+		// pass to shell->frontend_handler
+		if (shell->frontend_pt != NULL)
+		{
+			shell->frontend_pt->thread(shell->frontend_pt, evt);
+		}
 		break;
 	}
 	
@@ -429,7 +472,6 @@ vsfshell_echo_handler(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 	struct vsfshell_handler_param_t *param =
 						(struct vsfshell_handler_param_t *)pt->user_data;
 	struct vsfshell_t *shell = param->shell;
-	struct vsf_buffer_t buffer;
 	
 	vsfsm_pt_begin(pt);
 	if (param->argc != 2)
@@ -439,9 +481,7 @@ vsfshell_echo_handler(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 		goto handler_thread_end;
 	}
 	
-	buffer.buffer = (uint8_t *)param->argv[1];
-	buffer.size = strlen(param->argv[1]);
-	stream_tx(shell->stream_tx, &buffer);
+	vsfshell_print_string(shell, param->argv[1]);
 	vsfsm_pt_end(pt);
 	
 handler_thread_end:

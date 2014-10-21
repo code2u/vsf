@@ -135,23 +135,26 @@ vsf_err_t vsfsm_pt_init(struct vsfsm_t *sm, struct vsfsm_pt_t *pt,
 #define vsfsm_pt_begin(pt)				switch ((pt)->state) { case 0:
 #define vsfsm_pt_entry(pt)				(pt)->state = __LINE__; case __LINE__:
 // wait for event
-#define vsfsm_pt_wfe(pt, e)				do {\
-											vsfsm_pt_entry(pt);\
-											if (evt != (e)) return VSFERR_NOT_READY;\
-										} while (0)
+#define vsfsm_pt_wfe(pt, e)			\
+	do {\
+		evt = VSFSM_EVT_INVALID;\
+		vsfsm_pt_entry(pt);\
+		if (evt != (e)) return VSFERR_NOT_READY;\
+	} while (0)
 // wait for pt, slave pt uses the same stack as the master pt
-#define vsfsm_pt_wfpt(pt, ptslave)		do {\
-											(ptslave)->state = 0;\
-											(ptslave)->sm = (pt)->sm;\
-											vsfsm_pt_entry(pt);\
-											{\
-												vsf_err_t __err = (ptslave)->thread(ptslave);\
-												if (__err != VSFERR_NONE)\
-												{\
-													return __err;\
-												}\
-											}\
-										} while (0)
+#define vsfsm_pt_wfpt(pt, ptslave)	\
+	do {\
+		(ptslave)->state = 0;\
+		(ptslave)->sm = (pt)->sm;\
+		vsfsm_pt_entry(pt);\
+		{\
+			vsf_err_t __err = (ptslave)->thread(ptslave, evt);\
+			if (__err != VSFERR_NONE)\
+			{\
+				return __err;\
+			}\
+		}\
+	} while (0)
 #define vsfsm_pt_end(pt)				}
 #endif
 
