@@ -89,7 +89,10 @@ typedef vsf_err_t (*vsfshell_printf_thread_t)(struct vsfsm_pt_t *pt,
 		}\
 	} while (0)
 
-// for handler
+// for handlers
+// vsfshell_handler_release_io is called when pt want to run in back-end
+void vsfshell_handler_release_io(struct vsfsm_pt_t *pt);
+// vsfshell_handler_exit is called when pt exit
 void vsfshell_handler_exit(struct vsfsm_pt_t *pt);
 
 #endif	// __VSFSHELL_H_INCLUDED__

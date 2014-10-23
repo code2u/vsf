@@ -305,7 +305,7 @@ vsfshell_free_handler_thread(struct vsfshell_t *shell, struct vsfsm_t *sm)
 	}
 }
 
-void vsfshell_handler_exit(struct vsfsm_pt_t *pt)
+void vsfshell_handler_release_io(struct vsfsm_pt_t *pt)
 {
 	struct vsfshell_handler_param_t *param =
 						(struct vsfshell_handler_param_t *)pt->user_data;
@@ -316,6 +316,15 @@ void vsfshell_handler_exit(struct vsfsm_pt_t *pt)
 		// current frontend_handler exit
 		vsfsm_post_evt(&shell->sm, VSFSHELL_EVT_FRONT_HANDLER_EXIT);
 	}
+}
+
+void vsfshell_handler_exit(struct vsfsm_pt_t *pt)
+{
+	struct vsfshell_handler_param_t *param =
+						(struct vsfshell_handler_param_t *)pt->user_data;
+	struct vsfshell_t *shell = param->shell;
+	
+	vsfshell_handler_release_io(pt);
 	vsfsm_remove_subsm(&shell->sm.init_state, &param->sm);
 	vsfshell_free_handler_thread(shell, &param->sm);
 }
