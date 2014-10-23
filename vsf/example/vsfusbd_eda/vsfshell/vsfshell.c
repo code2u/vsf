@@ -17,6 +17,8 @@
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
 
+#include <stdio.h>
+#include <stdarg.h>
 #include <ctype.h>
 
 #include "compiler.h"
@@ -83,14 +85,16 @@ static void vsfshell_streamtx_callback_on_rxconn(void *p)
 
 // vsfshell_output_thread is used to process the events
 // 		from the receiver of the stream_tx
-vsf_err_t vsfshell_output_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
+vsf_err_t vsfshell_output_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt,
+									const char *format, ...)
 {
 	char *str = (char *)pt->user_data;
 	struct vsfshell_handler_param_t *param = container_of(pt,
 									struct vsfshell_handler_param_t, output_pt);
 	struct vsfshell_t *shell = param->shell;
-	uint32_t str_len = strlen(str), size_avail;
+	uint32_t str_len, size_avail;
 	struct vsf_buffer_t buffer;
+	va_list ap;
 	
 	vsfsm_pt_begin(pt);
 	// get lock here
@@ -98,6 +102,12 @@ vsf_err_t vsfshell_output_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 	{
 		vsfsm_pt_wfe(pt, VSFSHELL_EVT_OUTPUT_CRIT_AVAIL);
 	}
+	
+	va_start(ap, format);
+	str_len = vsnprintf(shell->printf_buff, sizeof(shell->printf_buff), format, ap);
+	va_end(ap);
+	shell->printf_pos = shell->printf_buff;
+	
 	while (str_len > 0)
 	{
 		size_avail = stream_get_free_size(shell->stream_tx);
@@ -222,7 +232,7 @@ vsfshell_new_handler_thread(struct vsfshell_t *shell, char *cmd)
 	memset(param, 0, sizeof(*param));
 	param->shell = shell;
 	param->output_pt.sm = &param->sm;
-	param->output_pt.thread = vsfshell_output_thread;
+	param->output_pt.thread = (vsfsm_pt_thread_t)vsfshell_output_thread;
 	
 	// parse command line
 	param->argc = dimof(param->argv);
@@ -311,16 +321,15 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 	char *cmd = (char *)shell->tbuffer.buffer.buffer;
 	struct vsf_buffer_t buffer;
 	uint8_t ch;
-	char echo_str[2];
 	
 	switch (evt)
 	{
 	case VSFSHELL_EVT_STREAMTX_ONCONN:
-		vsfshell_print_string(output_pt,
-							"vsfshell 0.1 beta by SimonQian" VSFSHELL_LINEEND);
+		vsfshell_printf(output_pt,
+						"vsfshell 0.1 beta by SimonQian" VSFSHELL_LINEEND);
 		// fall through
 	case VSFSHELL_EVT_FRONT_HANDLER_EXIT:
-		vsfshell_print_string(output_pt, VSFSHELL_LINEEND VSFSHELL_PROMPT);
+		vsfshell_printf(output_pt, VSFSHELL_LINEEND VSFSHELL_PROMPT);
 		shell->frontend_pt = pt;
 		break;
 	case VSFSHELL_EVT_STREAMRX_ONIN:
@@ -336,14 +345,14 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 			
 			if ('\r' == ch)
 			{
-				vsfshell_print_string(output_pt, "\n");
+				vsfshell_printf(output_pt, "\n");
 			}
 			else if ('\b' == ch)
 			{
 				if (shell->tbuffer.position)
 				{
 					shell->tbuffer.position--;
-					vsfshell_print_string(output_pt, "\b \b");
+					vsfshell_printf(output_pt, "\b \b");
 				}
 				continue;
 			}
@@ -358,9 +367,7 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 			}
 			
 			// echo
-			echo_str[0] = ch;
-			echo_str[1] = '\0';
-			vsfshell_print_string(output_pt, echo_str);
+			vsfshell_printf(output_pt, "%c", ch);
 			
 			if ('\r' == ch)
 			{
@@ -370,9 +377,8 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 					cmd[shell->tbuffer.position] = '\0';
 					if (vsfshell_new_handler_thread(shell, cmd))
 					{
-						vsfshell_print_string(output_pt, "Fail to execute :");
-						vsfshell_print_string(output_pt, cmd);
-						vsfshell_print_string(output_pt, VSFSHELL_LINEEND);
+						vsfshell_printf(output_pt,
+							"Fail to execute : %s" VSFSHELL_LINEEND, cmd);
 						vsfsm_post_evt(&shell->sm, VSFSHELL_EVT_FRONT_HANDLER_EXIT);
 					}
 				}
@@ -413,7 +419,7 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		shell->input_pt.user_data = shell;
 		shell->input_pt.thread = vsfshell_input_thread;
 		shell->input_pt.sm = sm;
-		shell->output_pt.thread = vsfshell_output_thread;
+		shell->output_pt.thread = (vsfsm_pt_thread_t)vsfshell_output_thread;
 		shell->output_pt.sm = sm;
 		
 		stream_connect_rx(shell->stream_rx);
@@ -478,12 +484,12 @@ vsfshell_echo_handler(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 	vsfsm_pt_begin(pt);
 	if (param->argc != 2)
 	{
-		vsfshell_print_string(output_pt, "invalid format." VSFSHELL_LINEEND);
-		vsfshell_print_string(output_pt, "format: echo STRING" VSFSHELL_LINEEND);
+		vsfshell_printf(output_pt, "invalid format." VSFSHELL_LINEEND);
+		vsfshell_printf(output_pt, "format: echo STRING" VSFSHELL_LINEEND);
 		goto handler_thread_end;
 	}
 	
-	vsfshell_print_string(output_pt, param->argv[1]);
+	vsfshell_printf(output_pt, "%s", param->argv[1]);
 	vsfsm_pt_end(pt);
 	
 handler_thread_end:
@@ -501,15 +507,15 @@ vsfshell_delayms_handler(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 	vsfsm_pt_begin(pt);
 	if (param->argc != 2)
 	{
-		vsfshell_print_string(output_pt, "invalid format." VSFSHELL_LINEEND);
-		vsfshell_print_string(output_pt, "format: delayms MS" VSFSHELL_LINEEND);
+		vsfshell_printf(output_pt, "invalid format." VSFSHELL_LINEEND);
+		vsfshell_printf(output_pt, "format: delayms MS" VSFSHELL_LINEEND);
 		goto handler_thread_end;
 	}
 	
 	param->priv = MALLOC(sizeof(struct vsftimer_timer_t));
 	if (NULL == param->priv)
 	{
-		vsfshell_print_string(output_pt, "not enough resources." VSFSHELL_LINEEND);
+		vsfshell_printf(output_pt, "not enough resources." VSFSHELL_LINEEND);
 		goto handler_thread_end;
 	}
 	memset(param->priv, 0, sizeof(struct vsftimer_timer_t));

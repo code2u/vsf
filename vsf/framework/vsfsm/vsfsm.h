@@ -114,9 +114,11 @@ struct vsfsm_t
 };
 
 #if VSFSM_CFG_PT_EN
+struct vsfsm_pt_t;
+typedef vsf_err_t (*vsfsm_pt_thread_t)(struct vsfsm_pt_t *pt, vsfsm_evt_t evt);
 struct vsfsm_pt_t
 {
-	vsf_err_t (*thread)(struct vsfsm_pt_t *pt, vsfsm_evt_t evt);
+	vsfsm_pt_thread_t thread;
 	void *user_data;
 	
 #if VSFSM_CFG_PT_STACK_EN
