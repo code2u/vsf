@@ -204,7 +204,6 @@ vsfshell_new_handler_thread(struct vsfshell_t *shell, char *cmd)
 		(struct vsfshell_handler_param_t *)malloc(sizeof(*param));
 	struct vsfshell_handler_t *handler;
 	uint32_t i;
-	bool frontend = false;
 	vsf_err_t err = VSFERR_NONE;
 	
 	if (NULL == param)
@@ -221,19 +220,6 @@ vsfshell_new_handler_thread(struct vsfshell_t *shell, char *cmd)
 		goto exit_free_argv;
 	}
 	
-	if ((param->argc > 1) && !strcmp(param->argv[param->argc - 1], "&"))
-	{
-		// background thread
-		param->argc--;
-		FREE(param->argv[param->argc - 1]);
-		param->argv[param->argc - 1] = NULL;
-	}
-	else
-	{
-		// frontend thread
-		frontend = true;
-	}
-	
 	// search handler
 	handler =  vsfshell_search_handler(shell, param->argv[0]);
 	if (NULL == handler)
@@ -248,10 +234,7 @@ vsfshell_new_handler_thread(struct vsfshell_t *shell, char *cmd)
 	{
 		goto exit_free_argv;
 	}
-	if (frontend)
-	{
-		shell->frontend_pt = &param->pt;
-	}
+	shell->frontend_pt = &param->pt;
 	vsfsm_pt_init(&param->sm, &param->pt, false);
 	goto exit;
 	
