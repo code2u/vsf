@@ -96,6 +96,12 @@ vsf_err_t vsfshell_output_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt,
 	struct vsf_buffer_t buffer;
 	va_list ap;
 	
+	// back-end thread can not output data
+	if (pt->sm != shell->frontend_pt->sm)
+	{
+		return VSFERR_NONE;
+	}
+	
 	vsfsm_pt_begin(pt);
 	// get lock here
 	if (vsfsm_crit_enter(pt->sm, &shell->output_crit))
@@ -251,6 +257,7 @@ vsfshell_new_handler_thread(struct vsfshell_t *shell, char *cmd)
 	
 	param->pt.thread = handler->thread;
 	param->pt.user_data = param;
+	param->pt.sm = &param->sm;
 	
 	if (vsfsm_add_subsm(&shell->sm.init_state, &param->sm))
 	{
