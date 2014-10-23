@@ -47,8 +47,9 @@ struct vsfshell_t
 	struct vsf_transaction_buffer_t tbuffer;
 	struct vsfsm_pt_t *frontend_pt;
 	struct vsfshell_handler_t *handlers;
-	struct vsfsm_pt_t output_pt;
 	struct vsfsm_pt_t input_pt;
+	struct vsfsm_pt_t output_pt;
+	struct vsfsm_crit_t output_crit;
 };
 
 struct vsfshell_handler_param_t
@@ -61,16 +62,17 @@ struct vsfshell_handler_param_t
 	void *priv;
 	struct vsfsm_t sm;
 	struct vsfsm_pt_t pt;
+	struct vsfsm_pt_t output_pt;
 };
 
 vsf_err_t vsfshell_init(struct vsfshell_t *shell);
 void vsfshell_register_handlers(struct vsfshell_t *shell,
 										struct vsfshell_handler_t *handlers);
 
-#define vsfshell_print_string(shell, str)\
+#define vsfshell_print_string(output_pt, str)\
 	do {\
-		(shell)->output_pt.user_data = (str);\
-		vsfsm_pt_wfpt(pt, &(shell)->output_pt);\
+		output_pt->user_data = (str);\
+		vsfsm_pt_wfpt(pt, output_pt);\
 	} while (0)
 
 // for handler

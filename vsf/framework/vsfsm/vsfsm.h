@@ -201,9 +201,9 @@ vsf_err_t vsfsm_sync_decrease(struct vsfsm_t *sm, struct vsfsm_sync_t *sync);
 
 // CRITICAL
 #define vsfsm_crit_t				vsfsm_sync_t
-#define vsfsm_crit_init(crit, evt)	vsfsm_sync_init((cirt), 1, 1, (evt), false)
-#define vsfsm_cirt_enter(sm, crit)	vsfsm_sync_decrease((sm), (crit))
-#define vsfsm_cirt_leave(sm, crit)	vsfsm_sync_increase((sm), (crit))
+#define vsfsm_crit_init(crit, evt)	vsfsm_sync_init((crit), 1, 1, (evt), false)
+#define vsfsm_crit_enter(sm, crit)	vsfsm_sync_decrease((sm), (crit))
+#define vsfsm_crit_leave(sm, crit)	vsfsm_sync_increase((sm), (crit))
 
 #endif	// VSFSM_CFG_SYNC_EN
 

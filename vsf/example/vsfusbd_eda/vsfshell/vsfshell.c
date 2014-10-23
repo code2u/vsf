@@ -48,7 +48,9 @@ enum vsfshell_EVT_t
 	VSFSHELL_EVT_STREAMTX_ONOUT = VSFSM_EVT_USER_LOCAL + 1,
 	VSFSHELL_EVT_STREAMRX_ONCONN = VSFSM_EVT_USER_LOCAL + 2,
 	VSFSHELL_EVT_STREAMTX_ONCONN = VSFSM_EVT_USER_LOCAL + 3,
+	
 	VSFSHELL_EVT_FRONT_HANDLER_EXIT = VSFSM_EVT_USER_LOCAL_INSTANT + 0,
+	VSFSHELL_EVT_OUTPUT_CRIT_AVAIL = VSFSM_EVT_USER_LOCAL_INSTANT + 1,
 };
 
 static void vsfshell_streamrx_callback_on_in_int(void *p)
@@ -84,11 +86,18 @@ static void vsfshell_streamtx_callback_on_rxconn(void *p)
 vsf_err_t vsfshell_output_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 {
 	char *str = (char *)pt->user_data;
-	struct vsfshell_t *shell = container_of(pt, struct vsfshell_t, output_pt);
+	struct vsfshell_handler_param_t *param = container_of(pt,
+									struct vsfshell_handler_param_t, output_pt);
+	struct vsfshell_t *shell = param->shell;
 	uint32_t str_len = strlen(str), size_avail;
 	struct vsf_buffer_t buffer;
 	
 	vsfsm_pt_begin(pt);
+	// get lock here
+	if (vsfsm_crit_enter(pt->sm, &shell->output_crit))
+	{
+		vsfsm_pt_wfe(pt, VSFSHELL_EVT_OUTPUT_CRIT_AVAIL);
+	}
 	while (str_len > 0)
 	{
 		size_avail = stream_get_free_size(shell->stream_tx);
@@ -212,6 +221,8 @@ vsfshell_new_handler_thread(struct vsfshell_t *shell, char *cmd)
 	}
 	memset(param, 0, sizeof(*param));
 	param->shell = shell;
+	param->output_pt.sm = &param->sm;
+	param->output_pt.thread = vsfshell_output_thread;
 	
 	// parse command line
 	param->argc = dimof(param->argv);
@@ -296,6 +307,8 @@ void vsfshell_handler_exit(struct vsfsm_pt_t *pt)
 vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 {
 	struct vsfshell_t *shell = (struct vsfshell_t *)pt->user_data;
+	struct vsfsm_pt_t *output_pt = &shell->output_pt;
+	char *cmd = (char *)shell->tbuffer.buffer.buffer;
 	struct vsf_buffer_t buffer;
 	uint8_t ch;
 	char echo_str[2];
@@ -303,10 +316,11 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 	switch (evt)
 	{
 	case VSFSHELL_EVT_STREAMTX_ONCONN:
-		vsfshell_print_string(shell, "vsfshell 0.1 beta by SimonQian" VSFSHELL_LINEEND);
+		vsfshell_print_string(output_pt,
+							"vsfshell 0.1 beta by SimonQian" VSFSHELL_LINEEND);
 		// fall through
 	case VSFSHELL_EVT_FRONT_HANDLER_EXIT:
-		vsfshell_print_string(shell, VSFSHELL_LINEEND VSFSHELL_PROMPT);
+		vsfshell_print_string(output_pt, VSFSHELL_LINEEND VSFSHELL_PROMPT);
 		shell->frontend_pt = pt;
 		break;
 	case VSFSHELL_EVT_STREAMRX_ONIN:
@@ -322,14 +336,14 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 			
 			if ('\r' == ch)
 			{
-				vsfshell_print_string(shell, "\n");
+				vsfshell_print_string(output_pt, "\n");
 			}
 			else if ('\b' == ch)
 			{
 				if (shell->tbuffer.position)
 				{
 					shell->tbuffer.position--;
-					vsfshell_print_string(shell, "\b \b");
+					vsfshell_print_string(output_pt, "\b \b");
 				}
 				continue;
 			}
@@ -346,20 +360,19 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 			// echo
 			echo_str[0] = ch;
 			echo_str[1] = '\0';
-			vsfshell_print_string(shell, echo_str);
+			vsfshell_print_string(output_pt, echo_str);
 			
 			if ('\r' == ch)
 			{
 				if (shell->tbuffer.position > 0)
 				{
-					char *cmd = (char *)shell->tbuffer.buffer.buffer;
 					// create new handler thread
 					cmd[shell->tbuffer.position] = '\0';
 					if (vsfshell_new_handler_thread(shell, cmd))
 					{
-						vsfshell_print_string(shell, "Fail to execute :");
-						vsfshell_print_string(shell, cmd);
-						vsfshell_print_string(shell, VSFSHELL_LINEEND);
+						vsfshell_print_string(output_pt, "Fail to execute :");
+						vsfshell_print_string(output_pt, cmd);
+						vsfshell_print_string(output_pt, VSFSHELL_LINEEND);
 						vsfsm_post_evt(&shell->sm, VSFSHELL_EVT_FRONT_HANDLER_EXIT);
 					}
 				}
@@ -383,6 +396,7 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		shell->tbuffer.buffer.buffer = (uint8_t *)shell->cmd_buff;
 		shell->tbuffer.buffer.size = sizeof(shell->cmd_buff);
 		shell->tbuffer.position = 0;
+		vsfsm_crit_init(&shell->output_crit, VSFSHELL_EVT_OUTPUT_CRIT_AVAIL);
 		
 		shell->stream_rx->callback_rx.param = shell;
 		shell->stream_rx->callback_rx.on_in_int =
@@ -398,7 +412,9 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		vsfshell_register_handlers(shell, vsfshell_handlers);
 		shell->input_pt.user_data = shell;
 		shell->input_pt.thread = vsfshell_input_thread;
+		shell->input_pt.sm = sm;
 		shell->output_pt.thread = vsfshell_output_thread;
+		shell->output_pt.sm = sm;
 		
 		stream_connect_rx(shell->stream_rx);
 		stream_connect_tx(shell->stream_tx);
@@ -457,17 +473,17 @@ vsfshell_echo_handler(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 {
 	struct vsfshell_handler_param_t *param =
 						(struct vsfshell_handler_param_t *)pt->user_data;
-	struct vsfshell_t *shell = param->shell;
+	struct vsfsm_pt_t *output_pt = &param->output_pt;
 	
 	vsfsm_pt_begin(pt);
 	if (param->argc != 2)
 	{
-		vsfshell_print_string(shell, "invalid format." VSFSHELL_LINEEND);
-		vsfshell_print_string(shell, "format: echo STRING" VSFSHELL_LINEEND);
+		vsfshell_print_string(output_pt, "invalid format." VSFSHELL_LINEEND);
+		vsfshell_print_string(output_pt, "format: echo STRING" VSFSHELL_LINEEND);
 		goto handler_thread_end;
 	}
 	
-	vsfshell_print_string(shell, param->argv[1]);
+	vsfshell_print_string(output_pt, param->argv[1]);
 	vsfsm_pt_end(pt);
 	
 handler_thread_end:
@@ -480,20 +496,20 @@ vsfshell_delayms_handler(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 {
 	struct vsfshell_handler_param_t *param =
 						(struct vsfshell_handler_param_t *)pt->user_data;
-	struct vsfshell_t *shell = param->shell;
+	struct vsfsm_pt_t *output_pt = &param->output_pt;
 	
 	vsfsm_pt_begin(pt);
 	if (param->argc != 2)
 	{
-		vsfshell_print_string(shell, "invalid format." VSFSHELL_LINEEND);
-		vsfshell_print_string(shell, "format: delayms MS" VSFSHELL_LINEEND);
+		vsfshell_print_string(output_pt, "invalid format." VSFSHELL_LINEEND);
+		vsfshell_print_string(output_pt, "format: delayms MS" VSFSHELL_LINEEND);
 		goto handler_thread_end;
 	}
 	
 	param->priv = MALLOC(sizeof(struct vsftimer_timer_t));
 	if (NULL == param->priv)
 	{
-		vsfshell_print_string(shell, "not enough resources." VSFSHELL_LINEEND);
+		vsfshell_print_string(output_pt, "not enough resources." VSFSHELL_LINEEND);
 		goto handler_thread_end;
 	}
 	memset(param->priv, 0, sizeof(struct vsftimer_timer_t));
