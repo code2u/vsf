@@ -127,6 +127,7 @@ vsf_err_t vsfshell_output_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt,
 			pt->user_data = (void *)str;
 		}
 	}
+	vsfsm_crit_leave(pt->sm, &shell->output_crit);
 	vsfsm_pt_end(pt);
 	
 	return VSFERR_NONE;
