@@ -75,11 +75,10 @@ void vsfshell_register_handlers(struct vsfshell_t *shell,
 
 typedef vsf_err_t (*vsfshell_printf_thread_t)(struct vsfsm_pt_t *pt,
 									vsfsm_evt_t evt, const char *format, ...);
-#define vsfshell_printf(shell, output_pt, format, ...)\
+#define vsfshell_printf(output_pt, format, ...)\
 	do {\
 		(output_pt)->state = 0;\
 		(output_pt)->sm = (pt)->sm;\
-		(output_pt)->user_data = (shell);\
 		vsfsm_pt_entry(pt);\
 		{\
 			vsfshell_printf_thread_t thread =\
