@@ -125,7 +125,7 @@ static void vsfusbd_CDCData_streamrx_callback_on_rxconn(void *p)
 }
 
 static struct vsfsm_state_t *
-vsfusbd_HID_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
+vsfusbd_CDCData_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 {
 	struct vsfusbd_CDC_param_t *param =
 						(struct vsfusbd_CDC_param_t *)sm->user_data;
@@ -202,7 +202,7 @@ static vsf_err_t vsfusbd_CDCData_class_init(uint8_t iface,
 	}
 	
 	// state machine init
-	ifs->sm.init_state.evt_handler = vsfusbd_HID_evt_handler;
+	ifs->sm.init_state.evt_handler = vsfusbd_CDCData_evt_handler;
 	param->iface = ifs;
 	param->device = device;
 	ifs->sm.user_data = (void*)param;
