@@ -516,18 +516,18 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		{
 			shell->input_pt.thread(&shell->input_pt, evt);
 		}
-		else
+		else if (shell->frontend_sm != NULL)
 		{
 			vsfsm_post_evt(shell->frontend_sm, evt);
 		}
 		break;
 	case VSFSHELL_EVT_STREAMTX_ONOUT:
-		// pass to shell->cur_output_sm
+		// pass to shell->output_sm
 		if (shell->output_sm == &shell->sm)
 		{
 			shell->output_pt.thread(&shell->output_pt, evt);
 		}
-		else
+		else if (shell->output_sm != NULL)
 		{
 			vsfsm_post_evt(shell->output_sm, evt);
 		}
