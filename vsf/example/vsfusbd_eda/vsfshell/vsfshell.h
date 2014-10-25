@@ -47,7 +47,7 @@ struct vsfshell_t
 	char printf_buff[256];
 	char *printf_pos;
 	struct vsf_transaction_buffer_t tbuffer;
-	struct vsfsm_t *frontend_sm;
+	struct vsfsm_t *input_sm;
 	struct vsfsm_t *output_sm;
 	struct vsfshell_handler_t *handlers;
 	struct vsfsm_pt_t input_pt;

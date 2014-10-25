@@ -144,10 +144,10 @@ vsf_err_t vsfshell_output_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt,
 	}
 	
 	va_start(ap, format);
-	if (pt->sm != shell->frontend_sm)
+	if (pt->sm != shell->input_sm)
 	{
 		// if current pt is not frontend, then add a new line
-		if (shell->frontend_sm == &shell->sm)
+		if (shell->input_sm == &shell->sm)
 		{
 			// if current frontend pt is vsfshell_input_thread
 			// 		then set output_interrupted, so that current command line
@@ -317,7 +317,7 @@ vsfshell_new_handler_thread(struct vsfshell_t *shell, char *cmd)
 	{
 		goto exit_free_argv;
 	}
-	shell->frontend_sm = &param->sm;
+	shell->input_sm = &param->sm;
 	vsfsm_pt_init(&param->sm, &param->pt, false);
 	goto exit;
 	
@@ -364,7 +364,7 @@ void vsfshell_handler_release_io(struct vsfsm_pt_t *pt)
 						(struct vsfshell_handler_param_t *)pt->user_data;
 	struct vsfshell_t *shell = param->shell;
 	
-	if (shell->frontend_sm == &param->sm)
+	if (shell->input_sm == &param->sm)
 	{
 		// current frontend_handler exit
 		vsfsm_post_evt(&shell->sm, VSFSHELL_EVT_FRONT_HANDLER_EXIT);
@@ -399,8 +399,8 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 						"vsfshell 0.1 beta by SimonQian" VSFSHELL_LINEEND);
 		// fall through
 	case VSFSHELL_EVT_FRONT_HANDLER_EXIT:
-		vsfshell_printf(output_pt, VSFSHELL_LINEEND VSFSHELL_PROMPT);
-		shell->frontend_sm = pt->sm;
+		vsfshell_printf(output_pt, VSFSHELL_PROMPT);
+		shell->input_sm = pt->sm;
 		break;
 	case VSFSHELL_EVT_STREAMRX_ONIN:
 		do
@@ -431,10 +431,6 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 			{
 				continue;
 			}
-			else
-			{
-				shell->tbuffer.buffer.buffer[shell->tbuffer.position++] = ch;
-			}
 			
 			// echo
 			vsfshell_printf(output_pt, "%c", ch);
@@ -454,6 +450,10 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 				}
 				shell->tbuffer.position = 0;
 				break;
+			}
+			else
+			{
+				shell->tbuffer.buffer.buffer[shell->tbuffer.position++] = ch;
 			}
 		} while (buffer.size > 0);
 		break;
@@ -493,6 +493,8 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		shell->output_pt.thread = (vsfsm_pt_thread_t)vsfshell_output_thread;
 		shell->output_pt.sm = sm;
 		shell->output_pt.user_data = shell;
+		// default frontend sm is shell itself
+		shell->input_sm = &shell->sm;
 		
 		stream_connect_rx(shell->stream_rx);
 		stream_connect_tx(shell->stream_tx);
@@ -514,13 +516,13 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		break;
 	case VSFSHELL_EVT_STREAMRX_ONIN:
 		// pass to shell->frontend_handler
-		if (shell->frontend_sm == &shell->sm)
+		if (shell->input_sm == &shell->sm)
 		{
 			shell->input_pt.thread(&shell->input_pt, evt);
 		}
-		else if (shell->frontend_sm != NULL)
+		else if (shell->input_sm != NULL)
 		{
-			vsfsm_post_evt(shell->frontend_sm, evt);
+			vsfsm_post_evt(shell->input_sm, evt);
 		}
 		break;
 	case VSFSHELL_EVT_STREAMTX_ONOUT:
@@ -575,7 +577,7 @@ vsfshell_echo_handler(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 		goto handler_thread_end;
 	}
 	
-	vsfshell_printf(output_pt, "%s", param->argv[1]);
+	vsfshell_printf(output_pt, "%s" VSFSHELL_LINEEND, param->argv[1]);
 	vsfsm_pt_end(pt);
 	
 handler_thread_end:
