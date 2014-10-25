@@ -43,7 +43,7 @@ struct vsfshell_t
 	struct vsfsm_t sm;
 	
 	// private
-	char cmd_buff[256];
+	char cmd_buff[128];
 	char printf_buff[256];
 	char *printf_pos;
 	struct vsf_transaction_buffer_t tbuffer;
@@ -54,6 +54,7 @@ struct vsfshell_t
 	struct vsfsm_pt_t output_pt;
 	struct vsfsm_crit_t output_crit;
 	bool output_interrupted;
+	char ch;
 };
 
 struct vsfshell_handler_param_t
@@ -93,8 +94,27 @@ typedef vsf_err_t (*vsfshell_printf_thread_t)(struct vsfsm_pt_t *pt,
 
 // for handlers
 // vsfshell_handler_release_io is called when pt want to run in back-end
-void vsfshell_handler_release_io(struct vsfsm_pt_t *pt);
+#define vsfshell_handler_release_io(pt)\
+	do {\
+		if (((struct vsfshell_handler_param_t *)(pt)->user_data)->shell->input_sm ==\
+				&((struct vsfshell_handler_param_t *)(pt)->user_data)->sm)\
+		{\
+			vsfshell_printf(&((struct vsfshell_handler_param_t *)(pt)->user_data)->output_pt, VSFSHELL_PROMPT);\
+			((struct vsfshell_handler_param_t *)(pt)->user_data)->shell->input_sm =\
+				&(((struct vsfshell_handler_param_t *)(pt)->user_data))->shell->sm;\
+		}\
+	} while (0)
 // vsfshell_handler_exit is called when pt exit
-void vsfshell_handler_exit(struct vsfsm_pt_t *pt);
+#define vsfshell_handler_exit(pt)\
+	do {\
+		vsfshell_handler_release_io(pt);\
+		{\
+			struct vsfshell_handler_param_t *param =\
+							(struct vsfshell_handler_param_t *)(pt)->user_data;\
+			struct vsfshell_t *shell = param->shell;\
+			vsfsm_remove_subsm(&shell->sm.init_state, &param->sm);\
+			vsfshell_free_handler_thread(shell, &param->sm);\
+		}\
+	} while (0)
 
 #endif	// __VSFSHELL_H_INCLUDED__
