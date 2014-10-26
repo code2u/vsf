@@ -147,15 +147,6 @@ vsfusbd_CDCData_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		
 		param->out_enable = false;
 		param->in_enable = false;
-		
-		if (param->stream_rx->rx_ready)
-		{
-			vsfsm_post_evt(sm, VSFUSBD_CDC_EVT_STREAMRX_ONCONN);
-		}
-		if (param->stream_tx->tx_ready)
-		{
-			vsfsm_post_evt(sm, VSFUSBD_CDC_EVT_STREAMTX_ONCONN);
-		}
 		break;
 	case VSFUSBD_CDC_EVT_STREAMTX_ONCONN:
 		vsfusbd_set_IN_handler(device, param->ep_in,

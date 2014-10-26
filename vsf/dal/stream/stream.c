@@ -79,6 +79,10 @@ void stream_connect_rx(struct vsf_stream_t *stream)
 	{
 		stream->callback_tx.on_connect_rx(stream->callback_tx.param);
 	}
+	if (stream->tx_ready)
+	{
+		stream->callback_rx.on_connect_tx(stream->callback_rx.param);
+	}
 	stream->rx_ready = true;
 }
 
@@ -87,6 +91,10 @@ void stream_connect_tx(struct vsf_stream_t *stream)
 	if (!stream->tx_ready && (stream->callback_rx.on_connect_tx != NULL))
 	{
 		stream->callback_rx.on_connect_tx(stream->callback_rx.param);
+	}
+	if (stream->rx_ready)
+	{
+		stream->callback_tx.on_connect_rx(stream->callback_tx.param);
 	}
 	stream->tx_ready = true;
 }

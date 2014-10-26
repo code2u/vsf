@@ -475,14 +475,6 @@ vsfshell_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		
 		stream_connect_rx(shell->stream_rx);
 		stream_connect_tx(shell->stream_tx);
-		if (shell->stream_rx->tx_ready)
-		{
-			vsfsm_post_evt(sm, VSFSHELL_EVT_STREAMRX_ONCONN);
-		}
-		if (shell->stream_tx->rx_ready)
-		{
-			vsfsm_post_evt(sm, VSFSHELL_EVT_STREAMTX_ONCONN);
-		}
 		break;
 	case VSFSHELL_EVT_STREAMRX_ONCONN:
 		break;
