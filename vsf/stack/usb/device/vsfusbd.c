@@ -1118,7 +1118,7 @@ static vsf_err_t vsfusbd_on_IN(void *p, uint8_t ep)
 {
 	struct vsfusbd_device_t *device = (struct vsfusbd_device_t *)p;
 	struct vsfsm_t *sm = &device->sm;
-	if ((ep <= VSFUSBD_CFG_MAX_IN_EP) && (device->OUT_handler[ep] != NULL))
+	if ((ep <= VSFUSBD_CFG_MAX_IN_EP) && (device->IN_handler[ep] != NULL))
 	{
 		return vsfsm_post_evt_pending(sm, VSFUSBD_INTEVT_INEP(ep));
 	}
