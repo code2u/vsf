@@ -79,8 +79,6 @@ extern void nuc400_lock_reg(void);
 vsf_err_t nuc400_usbd_init(uint32_t int_priority)
 {
 	memset(nuc400_usbd_epaddr, -1, sizeof(nuc400_usbd_epaddr));
-	nuc400_usbd_epaddr[0] = 0 | NUC400_USBD_EPIN;
-	nuc400_usbd_epaddr[1] = 0 | NUC400_USBD_EPOUT;
 	
 	nuc400_unlock_reg();
 	// Enable IP clock
@@ -106,7 +104,7 @@ vsf_err_t nuc400_usbd_init(uint32_t int_priority)
 	USBD->GINTEN = USBD_GINTEN_USBIE_Msk | USBD_GINTEN_CEPIE_Msk;
 	// Enable BUS interrupt
 	USBD->BUSINTEN = USBD_BUSINTEN_RSTIEN_Msk;
-	USBD->CEPINTEN = USBD_CEPINTEN_SETUPPKIEN_Msk |
+	USBD->CEPINTEN = USBD_CEPINTEN_SETUPPKIEN_Msk | USBD_CEPINTEN_RXPKIEN_Msk |
 					USBD_CEPINTEN_TXPKIEN_Msk | USBD_CEPINTEN_STSDONEIEN_Msk;
 	
 	NVIC->IP[USBD_IRQn] = int_priority;
@@ -194,6 +192,7 @@ vsf_err_t nuc400_usbd_get_setup(uint8_t *buffer)
 vsf_err_t nuc400_usbd_prepare_buffer(void)
 {
 	EP_Cfg_Ptr = 0x1000;
+	memset(nuc400_usbd_epaddr, -1, sizeof(nuc400_usbd_epaddr));
 	return VSFERR_NONE;
 }
 
@@ -220,7 +219,7 @@ static int8_t nuc400_usbd_get_free_ep(uint8_t idx)
 {
 	uint8_t i;
 	
-	for (i = 1; i < sizeof(nuc400_usbd_epaddr); i++)
+	for (i = 0; i < sizeof(nuc400_usbd_epaddr); i++)
 	{
 		if (-1 == nuc400_usbd_epaddr[i])
 		{
@@ -246,7 +245,7 @@ vsf_err_t nuc400_usbd_ep_set_type(uint8_t idx, enum interface_usbd_eptype_t type
 	
 	index_in = nuc400_usbd_ep(idx | NUC400_USBD_EPIN);
 	index_out = nuc400_usbd_ep(idx | NUC400_USBD_EPOUT);
-	if ((0 == idx) || ((index_in < 0) && (index_out < 0)))
+	if ((index_in < 0) && (index_out < 0))
 	{
 		return VSFERR_FAIL;
 	}
@@ -494,7 +493,7 @@ vsf_err_t nuc400_usbd_ep_set_IN_count(uint8_t idx, uint16_t size)
 	
 	if (0 == idx)
 	{
-		if (nuc400_setup_status_IN && (0 == size))
+		if (!nuc400_setup_status_IN && (0 == size))
 		{
 			USBD->CEPCTL = USB_CEPCTL_NAKCLR;
 		}
@@ -800,7 +799,7 @@ vsf_err_t nuc400_usbd_ep_enable_OUT(uint8_t idx)
 	
 	if (0 == idx)
 	{	
-		if (!nuc400_setup_status_IN)
+		if (nuc400_setup_status_IN)
 		{
 			USBD->CEPCTL = USB_CEPCTL_NAKCLR;
 		}
@@ -887,7 +886,7 @@ void USB_Istr(void)
 		if (IrqSt & USBD_CEPINTSTS_STSDONEIF_Msk) {
 			USBD->CEPINTSTS = USBD_CEPINTSTS_STSDONEIF_Msk;
 			
-			if (nuc400_setup_status_IN)
+			if (!nuc400_setup_status_IN)
 			{
 				if (nuc400_usbd_callback.on_in != NULL)
 				{
