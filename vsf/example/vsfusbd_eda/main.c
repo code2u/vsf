@@ -326,7 +326,6 @@ struct vsfapp_t
 			struct vsf_stream_t stream_rx;
 			uint8_t txbuff[65];
 			uint8_t rxbuff[65];
-			vsfsm_evt_t evt_buff[8];
 		} cdc;
 		struct vsfusbd_iface_t ifaces[3];
 		struct vsfusbd_config_t config[1];
@@ -401,8 +400,7 @@ struct vsfapp_t
 			{(struct vsfusbd_class_protocol_t *)&vsfusbd_CDCACMControl_class,
 				(void *)&app.usbd.cdc.param},
 			{(struct vsfusbd_class_protocol_t *)&vsfusbd_CDCACMData_class,
-				(void *)&app.usbd.cdc.param,
-				{{app.usbd.cdc.evt_buff, dimof(app.usbd.cdc.evt_buff)}}},
+				(void *)&app.usbd.cdc.param},
 		},						// struct vsfusbd_iface_t ifaces[3];
 		{
 			{NULL, NULL, dimof(app.usbd.ifaces),
@@ -423,16 +421,9 @@ struct vsfapp_t
 								// struct vsf_stream_t *stream_tx;
 			&app.usbd.cdc.stream_rx,
 								// struct vsf_stream_t *stream_rx;
-			{
-				{
-					app.shell.evt_buff,
-					dimof(app.shell.evt_buff),
-				},				// struct vsfsm_evtqueue_t evtq;
-			},					// struct vsfsm_t sm;
 		},						// struct vsfshell_t shell;
 	},							// struct shell
 	{
-		{NULL, 0},				// struct vsfsm_evtqueue_t evtq;
 		{app_evt_handler},		// struct vsfsm_state_t init_state;
 	},							// struct vsfsm_t sm;
 	{
@@ -484,7 +475,6 @@ app_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		}
 		app.usbd.device.drv->connect();
 		vsftimer_unregister(&app.usbpu_timer);
-		vsfsm_remove_subsm(&vsfsm_top, sm);
 		break;
 	}
 	return NULL;
@@ -492,7 +482,7 @@ app_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 
 int main(void)
 {
-	vsfsm_init(&app.sm, true);
+	vsfsm_init(&app.sm);
 	while (1)
 	{
 		vsfsm_poll();

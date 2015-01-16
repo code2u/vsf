@@ -25,5 +25,3 @@
 #define VSFUSBD_CFG_EPISO_EN				0
 
 #define VSFUSBD_CFG_LP_EN					0
-
-#define VSFUSBD_CFG_EVTQ_SIZE				16

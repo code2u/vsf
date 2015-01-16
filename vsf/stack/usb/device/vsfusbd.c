@@ -457,19 +457,7 @@ static vsf_err_t vsfusbd_stdreq_set_configuration_prepare(
 		return VSFERR_FAIL;
 	}
 	
-	// remove original sub-statemachine
-	if (device->configured)
-	{
-		int16_t config_idx = vsfusbd_get_config(device, device->configuration);
-		uint8_t i;
-		
-		device->configured = false;
-		for (i = 0; i < device->config[config_idx].num_of_ifaces; i++)
-		{
-			vsfsm_remove_subsm(&device->sm.init_state,
-					&device->config[config_idx].iface[i].sm);
-		}
-	}
+	device->configured = false;
 	
 	return VSFERR_NONE;
 }
@@ -662,11 +650,9 @@ static vsf_err_t vsfusbd_stdreq_set_configuration_process(
 	{
 		config->iface[i].alternate_setting = 0;
 		
-		if (((config->iface[i].class_protocol != NULL) && 
+		if ((config->iface[i].class_protocol != NULL) && 
 				(config->iface[i].class_protocol->init != NULL) && 
-				config->iface[i].class_protocol->init(i, device)) ||
-			((config->iface[i].sm.init_state.evt_handler != NULL) &&
-				vsfsm_add_subsm(&device->sm.init_state, &config->iface[i].sm)))
+				config->iface[i].class_protocol->init(i, device))
 		{
 			return VSFERR_FAIL;
 		}
@@ -1221,7 +1207,6 @@ vsfusbd_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 		{
 			device->callback.fini();
 		}
-		vsfsm_remove_subsm(&vsfsm_top, sm);
 		break;
 	case VSFSM_EVT_INIT:
 		{
@@ -1566,11 +1551,9 @@ vsfusbd_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 vsf_err_t vsfusbd_device_init(struct vsfusbd_device_t *device)
 {
 	memset(&device->sm, 0, sizeof(device->sm));
-	device->sm.evtq.evt_buffer = device->evtq;
-	device->sm.evtq.evt_buffer_num = dimof(device->evtq);
 	device->sm.init_state.evt_handler = vsfusbd_evt_handler;
 	device->sm.user_data = (void*)device;
-	return vsfsm_init(&device->sm, true);
+	return vsfsm_init(&device->sm);
 }
 
 vsf_err_t vsfusbd_device_fini(struct vsfusbd_device_t *device)

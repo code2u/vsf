@@ -112,7 +112,6 @@ typedef vsf_err_t (*vsfshell_printf_thread_t)(struct vsfsm_pt_t *pt,
 			struct vsfshell_handler_param_t *param =\
 							(struct vsfshell_handler_param_t *)(pt)->user_data;\
 			struct vsfshell_t *shell = param->shell;\
-			vsfsm_remove_subsm(&shell->sm.init_state, &param->sm);\
 			vsfshell_free_handler_thread(shell, &param->sm);\
 		}\
 	} while (0)

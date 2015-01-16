@@ -197,7 +197,7 @@ static vsf_err_t vsfusbd_CDCData_class_init(uint8_t iface,
 	param->iface = ifs;
 	param->device = device;
 	ifs->sm.user_data = (void*)param;
-	return vsfsm_init(&ifs->sm, false);
+	return vsfsm_init(&ifs->sm);
 }
 
 static vsf_err_t vsfusbd_CDCControl_SendEncapsulatedCommand_prepare(

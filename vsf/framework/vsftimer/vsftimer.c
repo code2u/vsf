@@ -30,17 +30,10 @@ struct vsftimer_t
 {
 	struct vsftimer_timer_t *timerlist;
 	struct vsfsm_t sm;
-	
-	// private
-	vsfsm_evt_t evt_buffer[1];
 } static vsftimer =
 {
 	NULL,
 	{
-		{
-			vsftimer.evt_buffer,		// vsfsm_evt_t *evt_buffer;
-			dimof(vsftimer.evt_buffer),	// uint16_t evt_buffer_num;
-		},								// struct vsfsm_evtqueue_t evt_queue;
 		{
 			vsftimer_init_handler,
 		},								// struct vsfsm_state_t init_state;
@@ -92,7 +85,7 @@ vsftimer_init_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 vsf_err_t vsftimer_init(void)
 {
 	vsftimer.timerlist = NULL;
-	return vsfsm_init(&vsftimer.sm, true);
+	return vsfsm_init(&vsftimer.sm);
 }
 
 vsf_err_t vsftimer_register(struct vsftimer_timer_t *timer)

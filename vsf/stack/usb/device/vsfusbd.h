@@ -195,7 +195,6 @@ struct vsfusbd_device_t
 	
 	// private
 	struct vsfsm_t sm;
-	vsfsm_evt_t evtq[VSFUSBD_CFG_EVTQ_SIZE];
 	
 	uint8_t address;
 	bool configured;

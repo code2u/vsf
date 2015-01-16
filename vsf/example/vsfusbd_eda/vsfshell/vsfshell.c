@@ -312,12 +312,8 @@ vsfshell_new_handler_thread(struct vsfshell_t *shell, char *cmd)
 	param->pt.user_data = param;
 	param->pt.sm = &param->sm;
 	
-	if (vsfsm_add_subsm(&shell->sm.init_state, &param->sm))
-	{
-		goto exit_free_argv;
-	}
 	shell->input_sm = &param->sm;
-	vsfsm_pt_init(&param->sm, &param->pt, false);
+	vsfsm_pt_init(&param->sm, &param->pt);
 	goto exit;
 	
 exit_free_argv:
@@ -341,10 +337,6 @@ vsfshell_free_handler_thread(struct vsfshell_t *shell, struct vsfsm_t *sm)
 	{
 		struct vsfsm_pt_t *pt = (struct vsfsm_pt_t *)sm->user_data;
 		
-		if (sm->evtq.evt_buffer != NULL)
-		{
-			FREE(sm->evtq.evt_buffer);
-		}
 		if (pt != NULL)
 		{
 			if (pt->user_data != NULL)
@@ -514,7 +506,7 @@ vsf_err_t vsfshell_init(struct vsfshell_t *shell)
 	// state machine init
 	shell->sm.init_state.evt_handler = vsfshell_evt_handler;
 	shell->sm.user_data = (void*)shell;
-	return vsfsm_init(&shell->sm, true);
+	return vsfsm_init(&shell->sm);
 }
 
 void vsfshell_register_handlers(struct vsfshell_t *shell,

@@ -52,17 +52,6 @@ enum
 
 typedef int vsfsm_evt_t;
 
-struct vsfsm_evtqueue_t
-{
-	vsfsm_evt_t *evt_buffer;
-	uint16_t evt_buffer_num;
-	
-	// private
-	uint16_t head;
-	uint16_t tail;
-	uint16_t count;
-};
-
 struct vsfsm_t;
 struct vsfsm_state_t
 {
@@ -71,16 +60,12 @@ struct vsfsm_state_t
 	// return -1 means the event is not handled, should redirect to superstate
 	struct vsfsm_state_t * (*evt_handler)(struct vsfsm_t *sm, vsfsm_evt_t evt);
 	
+#if (VSFSM_CFG_SM_EN && VSFSM_CFG_SUBSM_EN) || VSFSM_CFG_HSM_EN
 	// sub state machine list
-	// for subsm, user need to call vsfsm_init on VSFSM_EVT_ENTER
-	// if the subsm is historical, vsfsm_init should only be called once on
-	// 		first VSFSM_EVT_ENTER
-	// for initialized historical subsm, vsfsm_set_active should be called to
-	// 		set the subsm active(means ready to accept events) on
-	// 		VSFSM_EVT_ENTER, and set the subsm inactive on VSFSM_EVT_EXIT
 	struct vsfsm_t *subsm;
+#endif
 	
-#if VSFSM_CFG_SM_EN && VSFSM_CFG_HSM_EN
+#if VSFSM_CFG_HSM_EN
 	// for top state, super is NULL; other super points to the superstate
 	struct vsfsm_state_t *super;
 #endif
@@ -88,7 +73,6 @@ struct vsfsm_state_t
 
 struct vsfsm_t
 {
-	struct vsfsm_evtqueue_t evtq;
 	// initial state
 	// for protothread, evt_handler MUST point to vsfsm_pt_evt_handler
 	// 		which will be initialized in vsfsm_pt_init
@@ -97,20 +81,21 @@ struct vsfsm_t
 	// for protothread, user_data should point to vsfsm_pt_t structure
 	// 		which will be initialized in vsfsm_pt_init
 	void *user_data;
-#if VSFSM_CFG_SM_EN
-	// sm_extra is used for specific sm type
-	// for MSM, sm_extra point to the transition table
-	void *sm_extra;
-#endif
 	
 	// private
+#if VSFSM_CFG_SM_EN || VSFSM_CFG_HSM_EN
 	struct vsfsm_state_t *cur_state;
+# endif
 #if VSFSM_CFG_SYNC_EN
-	// pending_next is used for vsfsm_sem_t
+	// pending_next is used for vsfsm_sync_t
 	struct vsfsm_t *pending_next;
 #endif
 	volatile bool active;
+#if (VSFSM_CFG_SM_EN && VSFSM_CFG_SUBSM_EN) || VSFSM_CFG_HSM_EN
+	// next is used to link vsfsm_t in the same level
 	struct vsfsm_t *next;
+#endif
+	uint32_t evt_count;
 };
 
 #if VSFSM_CFG_PT_EN
@@ -132,8 +117,7 @@ struct vsfsm_pt_t
 	struct vsfsm_t *sm;
 };
 
-vsf_err_t vsfsm_pt_init(struct vsfsm_t *sm, struct vsfsm_pt_t *pt,
-						bool add_to_top);
+vsf_err_t vsfsm_pt_init(struct vsfsm_t *sm, struct vsfsm_pt_t *pt);
 #define vsfsm_pt_begin(pt)				switch ((pt)->state) { case 0:
 #define vsfsm_pt_entry(pt)				(pt)->state = __LINE__; case __LINE__:
 // wait for event
@@ -160,16 +144,18 @@ vsf_err_t vsfsm_pt_init(struct vsfsm_t *sm, struct vsfsm_pt_t *pt,
 #define vsfsm_pt_end(pt)				}
 #endif
 
-extern struct vsfsm_state_t vsfsm_top;
 // vsfsm_get_event_pending should be called with interrupt disabled
 uint32_t vsfsm_get_event_pending(void);
 
+#if (VSFSM_CFG_SM_EN && VSFSM_CFG_SUBSM_EN) || VSFSM_CFG_HSM_EN
+extern struct vsfsm_state_t vsfsm_top;
 // sub-statemachine add/remove
 vsf_err_t vsfsm_add_subsm(struct vsfsm_state_t *state, struct vsfsm_t *sm);
 vsf_err_t vsfsm_remove_subsm(struct vsfsm_state_t *state, struct vsfsm_t *sm);
+#endif
 
 // vsfsm_init will set the sm to be active(means ready to accept events)
-vsf_err_t vsfsm_init(struct vsfsm_t *sm, bool add_to_top);
+vsf_err_t vsfsm_init(struct vsfsm_t *sm);
 vsf_err_t vsfsm_poll(void);
 // sm is avtive after init, if sm will not accept further events
 // user MUST set the sm to be inactive
@@ -178,32 +164,32 @@ vsf_err_t vsfsm_post_evt(struct vsfsm_t *sm, vsfsm_evt_t evt);
 vsf_err_t vsfsm_post_evt_pending(struct vsfsm_t *sm, vsfsm_evt_t evt);
 
 #if VSFSM_CFG_SYNC_EN
-// vsfsm_sem_t is used as access lock for resources
+// vsfsm_sync_t is generic sync object
 struct vsfsm_sync_t
 {
 	uint32_t cur_value;
 	vsfsm_evt_t evt;
-	bool valid_on_increase;
 	
 	// private
 	uint32_t max_value;
 	struct vsfsm_t *sm_pending;
 };
 vsf_err_t vsfsm_sync_init(struct vsfsm_sync_t *sem, uint32_t cur_value,
-				uint32_t max_value, vsfsm_evt_t evt, bool valid_on_increase);
+				uint32_t max_value, vsfsm_evt_t evt);
 vsf_err_t vsfsm_sync_cancel(struct vsfsm_t *sm, struct vsfsm_sync_t *sync);
 vsf_err_t vsfsm_sync_increase(struct vsfsm_t *sm, struct vsfsm_sync_t *sync);
 vsf_err_t vsfsm_sync_decrease(struct vsfsm_t *sm, struct vsfsm_sync_t *sync);
 
 // SEMAPHORE
 #define vsfsm_sem_t					vsfsm_sync_t
-#define vsfsm_sem_init(sem, evt)	vsfsm_sync_init((sem), 0, 1, (evt), true)
-#define vsfsm_sem_send(sm, sem)		vsfsm_sync_increase((sm), (sem))
-#define vsfsm_sem_wait(sm, sem)		vsfsm_sync_decrease((sm), (sem))
+#define vsfsm_sem_init(sem, cnt, evt)\
+									vsfsm_sync_init((sem), (cnt), 0xFFFFFFFF, (evt))
+#define vsfsm_sem_post(sm, sem)		vsfsm_sync_increase((sm), (sem))
+#define vsfsm_sem_pend(sm, sem)		vsfsm_sync_decrease((sm), (sem))
 
 // CRITICAL
 #define vsfsm_crit_t				vsfsm_sync_t
-#define vsfsm_crit_init(crit, evt)	vsfsm_sync_init((crit), 1, 1, (evt), false)
+#define vsfsm_crit_init(crit, evt)	vsfsm_sync_init((crit), 1, 1, (evt))
 #define vsfsm_crit_enter(sm, crit)	vsfsm_sync_decrease((sm), (crit))
 #define vsfsm_crit_leave(sm, crit)	vsfsm_sync_increase((sm), (crit))
 
