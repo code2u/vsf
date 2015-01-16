@@ -90,7 +90,9 @@ struct vsfsm_t
 	// pending_next is used for vsfsm_sync_t
 	struct vsfsm_t *pending_next;
 #endif
+#if VSFSM_CFG_ACTIVE_EN
 	volatile bool active;
+#endif
 #if (VSFSM_CFG_SM_EN && VSFSM_CFG_SUBSM_EN) || VSFSM_CFG_HSM_EN
 	// next is used to link vsfsm_t in the same level
 	struct vsfsm_t *next;
@@ -157,9 +159,11 @@ vsf_err_t vsfsm_remove_subsm(struct vsfsm_state_t *state, struct vsfsm_t *sm);
 // vsfsm_init will set the sm to be active(means ready to accept events)
 vsf_err_t vsfsm_init(struct vsfsm_t *sm);
 vsf_err_t vsfsm_poll(void);
+#if VSFSM_CFG_ACTIVE_EN
 // sm is avtive after init, if sm will not accept further events
 // user MUST set the sm to be inactive
 vsf_err_t vsfsm_set_active(struct vsfsm_t *sm, bool active);
+#endif
 vsf_err_t vsfsm_post_evt(struct vsfsm_t *sm, vsfsm_evt_t evt);
 vsf_err_t vsfsm_post_evt_pending(struct vsfsm_t *sm, vsfsm_evt_t evt);
 

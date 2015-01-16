@@ -275,8 +275,10 @@ vsf_err_t vsfsm_init(struct vsfsm_t *sm)
 #endif
 	// ignore any state transition on VSFSM_EVT_ENTER
 	sm->init_state.evt_handler(sm, VSFSM_EVT_ENTER);
+#if VSFSM_CFG_ACTIVE_EN
 	// set active so that sm can accept events
 	vsfsm_set_active(sm, true);
+#endif
 	// process state transition on VSFSM_EVT_INIT
 	return vsfsm_post_evt(sm, VSFSM_EVT_INIT);
 }
@@ -299,6 +301,7 @@ vsf_err_t vsfsm_poll(void)
 	return VSFERR_NONE;
 }
 
+#if VSFSM_CFG_ACTIVE_EN
 vsf_err_t vsfsm_set_active(struct vsfsm_t *sm, bool active)
 {
 	vsf_enter_critical();
@@ -306,10 +309,14 @@ vsf_err_t vsfsm_set_active(struct vsfsm_t *sm, bool active)
 	vsf_leave_critical();
 	return VSFERR_NONE;
 }
+#endif
 
 vsf_err_t vsfsm_post_evt(struct vsfsm_t *sm, vsfsm_evt_t evt)
 {
-	return (!sm->active) ? VSFERR_FAIL :
+	return
+#if VSFSM_CFG_ACTIVE_EN
+			(!sm->active) ? VSFERR_FAIL :
+#endif
 			((evt >= VSFSM_EVT_INSTANT) &&
 				(evt <= VSFSM_EVT_INSTANT_END)) ||
 			((evt >= VSFSM_EVT_LOCAL_INSTANT) &&
@@ -321,7 +328,10 @@ vsf_err_t vsfsm_post_evt(struct vsfsm_t *sm, vsfsm_evt_t evt)
 // pending event will be forced to be sent to event queue
 vsf_err_t vsfsm_post_evt_pending(struct vsfsm_t *sm, vsfsm_evt_t evt)
 {
-	return (!sm->active) ||
+	return
+#if VSFSM_CFG_ACTIVE_EN
+			(!sm->active) ||
+#endif
 			((evt >= VSFSM_EVT_INSTANT) &&
 				(evt <= VSFSM_EVT_INSTANT_END)) ||
 			((evt >= VSFSM_EVT_LOCAL_INSTANT) &&
@@ -395,7 +405,7 @@ vsf_err_t vsfsm_sync_init(struct vsfsm_sync_t *sync, uint32_t cur_value,
 
 static void vsfsm_sync_append_sm(struct vsfsm_t *sm, struct vsfsm_sync_t *sync)
 {
-	struct vsfsm_t sm_temp, *sm_pending;
+	struct vsfsm_t *sm_pending;
 	
 	sm->pending_next = NULL;
 	if (NULL == sync->sm_pending)
@@ -415,7 +425,7 @@ static void vsfsm_sync_append_sm(struct vsfsm_t *sm, struct vsfsm_sync_t *sync)
 
 vsf_err_t vsfsm_sync_cancel(struct vsfsm_t *sm, struct vsfsm_sync_t *sync)
 {
-	struct vsfsm_t sm_temp, *sm_pending;
+	struct vsfsm_t *sm_pending;
 	
 	if (sync->sm_pending == sm)
 	{
