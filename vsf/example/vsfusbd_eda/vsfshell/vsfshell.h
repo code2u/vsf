@@ -116,4 +116,6 @@ typedef vsf_err_t (*vsfshell_printf_thread_t)(struct vsfsm_pt_t *pt,
 		}\
 	} while (0)
 
+void vsfshell_free_handler_thread(struct vsfshell_t *shell, struct vsfsm_t *sm);
+
 #endif	// __VSFSHELL_H_INCLUDED__

@@ -330,8 +330,7 @@ exit:
 	return err;
 }
 
-static void
-vsfshell_free_handler_thread(struct vsfshell_t *shell, struct vsfsm_t *sm)
+void vsfshell_free_handler_thread(struct vsfshell_t *shell, struct vsfsm_t *sm)
 {
 	if (sm != NULL)
 	{
@@ -412,6 +411,10 @@ vsf_err_t vsfshell_input_thread(struct vsfsm_pt_t *pt, vsfsm_evt_t evt)
 						vsfshell_printf(output_pt, VSFSHELL_PROMPT);
 					}
 					shell->tbuffer.position = 0;
+				}
+				else
+				{
+					vsfshell_printf(output_pt, VSFSHELL_PROMPT);
 				}
 				break;
 			}
