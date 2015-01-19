@@ -482,6 +482,7 @@ app_evt_handler(struct vsfsm_t *sm, vsfsm_evt_t evt)
 
 int main(void)
 {
+	vsf_leave_critical();
 	vsfsm_init(&app.sm);
 	while (1)
 	{
